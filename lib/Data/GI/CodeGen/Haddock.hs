@@ -243,7 +243,7 @@ writeHaddock pos haddock =
         DocAfterSymbol -> "^"
       lines = case T.lines haddock of
         [] -> []
-        (first:rest) -> ("-- " <> marker <> " " <> first) : map ("-- " <>) rest
+        (first:rest) -> ("(* " <> marker <> " " <> first <> " *)") : map (\l -> "(* " <> l <> " *)") rest
   in mapM_ line lines
 
 -- | Write the documentation for the given argument.

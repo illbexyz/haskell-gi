@@ -30,8 +30,8 @@ type PSView = Text
 type PSExpression = Text
 
 writePattern :: Text -> PatternSynonym -> CodeGen ()
-writePattern name (SimpleSynonym value t) = line $
-      "pattern " <> ucFirst name <> " = " <> value <> " :: " <> t
+writePattern name (SimpleSynonym value _t) = line $
+      "let " <> ucFirst name <> " = " <> value
 writePattern name (ExplicitSynonym view expression value t) = do
   -- Supported only on ghc >= 7.10
   setModuleMinBase Base48

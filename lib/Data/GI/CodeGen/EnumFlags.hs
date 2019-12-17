@@ -19,7 +19,7 @@ import Data.GI.CodeGen.Code
 import Data.GI.CodeGen.Haddock (deprecatedPragma, writeDocumentation,
                                 writeHaddock, RelativeDocPosition(..))
 import Data.GI.CodeGen.SymbolNaming (upperName)
-import Data.GI.CodeGen.Util (tshow)
+import Data.GI.CodeGen.Util (tshow, lcFirst)
 
 -- | Given a list of named enum members, filter out those that have
 -- the same value as a previous entry in the list.
@@ -52,10 +52,10 @@ genEnumOrFlags docSection n@(Name ns name) e = do
   deprecatedPragma name' (enumDeprecated e)
 
   group $ do
-    export docSection (name' <> "(..)")
-    hsBoot . line $ "data " <> name'
+    -- export docSection (name' <> "(..)")
+    hsBoot . line $ "type " <> name'
     writeDocumentation DocBeforeSymbol (enumDocumentation e)
-    line $ "data " <> name' <> " = "
+    line $ "type " <> (lcFirst name') <> " = "
     indent $
       case members' of
         ((fieldName, firstMember):fs) -> do
@@ -64,22 +64,25 @@ genEnumOrFlags docSection n@(Name ns name) e = do
           forM_ fs $ \(n, member) -> do
             line $ "| " <> n
             writeDocumentation DocAfterSymbol (enumMemberDoc member)
-          line $ "| Another" <> name' <> " Int"
+          line $ "| Another" <> name' <> " of int"
           writeHaddock DocAfterSymbol "Catch-all for unknown values"
-          line "deriving (Show, Eq)"
         _ -> return ()
+    line "[@@deriving show, compare]"
 
   group $ do
-    bline $ "instance P.Enum " <> name' <> " where"
+    -- bline $ "instance P.Enum " <> name' <> " where"
+    bline $ "let fromEnum = function"
     indent $ do
             forM_ members' $ \(n, m) ->
-                line $ "fromEnum " <> n <> " = " <> tshow (enumMemberValue m)
-            line $ "fromEnum (Another" <> name' <> " k) = k"
+                line $ "| " <> n <> " -> " <> tshow (enumMemberValue m)
+            line $ "| Another" <> name' <> " k -> k"
     blank
+
+    bline $ "let toEnum = function"
     indent $ do
             forM_ (dropDuplicated members') $ \(n, m) ->
-                line $ "toEnum " <> tshow (enumMemberValue m) <> " = " <> n
-            line $ "toEnum k = Another" <> name' <> " k"
+                line $ "| " <> tshow (enumMemberValue m) <> " -> " <> n
+            line $ "| k -> Another" <> name' <> " k"
 
   group $ do
     line $ "instance P.Ord " <> name' <> " where"
@@ -101,7 +104,7 @@ genBoxedEnum n typeInit = do
 
 genEnum :: Name -> Enumeration -> CodeGen ()
 genEnum n@(Name _ name) enum = do
-  line $ "-- Enum " <> name
+  line $ "(* Enum " <> name <> " *)"
 
   let docSection = NamedSubsection EnumSection (upperName n)
   handleCGExc (\e -> line $ "-- XXX Could not generate: " <> describeCGError e)
@@ -126,7 +129,7 @@ genBoxedFlags n typeInit = do
 -- the IsGFlag typeclass.
 genFlags :: Name -> Flags -> CodeGen ()
 genFlags n@(Name _ name) (Flags enum) = do
-  line $ "-- Flags " <> name
+  line $ "(* Flags " <> name <> " *)"
 
   let docSection = NamedSubsection FlagSection (upperName n)
   handleCGExc (\e -> line $ "-- XXX Could not generate: " <> describeCGError e)
