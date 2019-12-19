@@ -30,7 +30,7 @@ runhaskell Setup.hs install
 if [ ! -d "./dist/$bindings_lib/dist" ]
 then
     pushd bindings
-        cabal new-run genBuildInfo Atk
+        cabal new-run genBuildInfo $bindings_lib
         pushd $bindings_lib
             cabal v1-install
         popd
