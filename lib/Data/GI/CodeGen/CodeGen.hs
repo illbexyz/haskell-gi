@@ -259,8 +259,8 @@ genMethod cn m@(Method {
     genCCallableWrapper mn' sym c''
     export (NamedSubsection MethodSection $ lowerName mn) (lowerName mn')
 
-    cppIf CPPOverloading $
-         genMethodInfo cn (m {methodCallable = c''})
+    -- cppIf CPPOverloading $
+    --      genMethodInfo cn (m {methodCallable = c''})
 
 -- | Generate the GValue instances for the given GObject.
 genGObjectGValueInstance :: Name -> Text -> CodeGen ()
@@ -344,47 +344,50 @@ genGObjectCasts n cn_ parents = do
 -- of objects, we deal with these separately.
 genObject :: Name -> Object -> CodeGen ()
 genObject n o = do
-  let name' = upperName n
-  let t = TInterface n
-  isGO <- isGObject t
-
-  if not isGO
-  then line $ "-- APIObject \"" <> name' <>
-                "\" does not descend from GObject, it will be ignored."
+  if (name n) /= "Button" then
+    line $ "-- Ignored: I'm generating only button"
   else do
-    writeHaddock DocBeforeSymbol ("Memory-managed wrapper type.")
-    bline $ "newtype " <> name' <> " = " <> name' <> " (ManagedPtr " <> name' <> ")"
-    newtypeDeriving
-    exportDecl (name' <> "(..)")
+    let name' = upperName n
+    let t = TInterface n
+    isGO <- isGObject t
 
-    addSectionDocumentation ToplevelSection (objDocumentation o)
+    if not isGO
+    then line $ "-- APIObject \"" <> name' <>
+                  "\" does not descend from GObject, it will be ignored."
+    else do
+      -- writeHaddock DocBeforeSymbol ("Memory-managed wrapper type.")
+      -- bline $ "newtype " <> name' <> " = " <> name' <> " (ManagedPtr " <> name' <> ")"
+      -- newtypeDeriving
+      -- exportDecl (name' <> "(..)")
 
-    -- Type safe casting to parent objects, and implemented interfaces.
-    parents <- instanceTree n
-    genGObjectCasts n (objTypeInit o) (parents <> objInterfaces o)
+      -- addSectionDocumentation ToplevelSection (objDocumentation o)
 
-    noName name'
+      -- Type safe casting to parent objects, and implemented interfaces.
+      -- parents <- instanceTree n
+      -- genGObjectCasts n (objTypeInit o) (parents <> objInterfaces o)
 
-    cppIf CPPOverloading $
-         fullObjectMethodList n o >>= genMethodList n
+      -- noName name'
 
-    forM_ (objSignals o) $ \s -> genSignal s n
+      -- cppIf CPPOverloading $
+      --     fullObjectMethodList n o >>= genMethodList n
 
-    genObjectProperties n o
-    cppIf CPPOverloading $
-         genNamespacedPropLabels n (objProperties o) (objMethods o)
-    cppIf CPPOverloading $
-         genObjectSignals n o
+      forM_ (objSignals o) $ \s -> genSignal s n
 
-    -- Methods
-    forM_ (objMethods o) $ \f -> do
-      let mn = methodName f
-      handleCGExc (\e -> line ("-- XXX Could not generate method "
-                              <> name' <> "::" <> name mn <> "\n"
-                              <> "-- Error was : " <> describeCGError e)
-                  >> (cppIf CPPOverloading $
-                           genUnsupportedMethodInfo n f))
-                  (genMethod n f)
+      genObjectProperties n o
+      -- cppIf CPPOverloading $
+      --     genNamespacedPropLabels n (objProperties o) (objMethods o)
+      -- cppIf CPPOverloading $
+      --     genObjectSignals n o
+
+      -- Methods
+      forM_ (objMethods o) $ \f -> do
+        let mn = methodName f
+        handleCGExc (\e -> line ("-- XXX Could not generate method "
+                                <> name' <> "::" <> name mn <> "\n"
+                                <> "-- Error was : " <> describeCGError e)
+                    >> (cppIf CPPOverloading $
+                            genUnsupportedMethodInfo n f))
+                    (genMethod n f)
 
 genInterface :: Name -> Interface -> CodeGen ()
 genInterface n iface = do
@@ -531,8 +534,8 @@ genModule :: M.Map Name API -> CodeGen ()
 genModule apis = do
   -- Reexport Data.GI.Base for convenience (so it does not need to be
   -- imported separately).
-  line "import Data.GI.Base"
-  exportModule "Data.GI.Base"
+  -- line "import Data.GI.Base"
+  -- exportModule "Data.GI.Base"
 
   -- Some API symbols are embedded into structures, extract these and
   -- inject them into the set of APIs loaded and being generated.

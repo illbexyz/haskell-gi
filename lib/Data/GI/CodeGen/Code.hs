@@ -33,6 +33,7 @@ module Data.GI.CodeGen.Code
     , increaseIndent
     , bline
     , line
+    , commentLine
     , blank
     , group
     , cppIf
@@ -100,6 +101,8 @@ import Data.GI.CodeGen.ModulePath (ModulePath(..), dotModulePath, (/.))
 import Data.GI.CodeGen.Type (Type(..))
 import Data.GI.CodeGen.Util (tshow, terror, padTo, utf8WriteFile)
 import Data.GI.CodeGen.ProjectInfo (authors, license, maintainers)
+
+import Debug.Trace
 
 -- | Set of CPP conditionals understood by the code generator.
 data CPPConditional = CPPIf Text -- ^ #if Foo
@@ -562,6 +565,9 @@ tellCode c = modify' (\(cgs, s) -> (cgs, s {moduleCode = moduleCode s <>
 line :: Text -> CodeGen ()
 line = tellCode . Line
 
+commentLine :: Text -> CodeGen ()
+commentLine t = line $ "(* " <> t <> " *)" 
+
 -- | Print out the given line both to the normal module, and to the
 -- HsBoot file.
 bline :: Text -> CodeGen ()
@@ -852,8 +858,8 @@ moduleHaddock (Just description) =
 formatHaddockComment :: Text -> Text
 formatHaddockComment doc = let lines = case T.lines doc of
                                  [] -> []
-                                 (first:rest) -> ("-- | " <> first) :
-                                                 map ("-- " <>) rest
+                                 (first:rest) -> ("(* " <> first <> " *)") :
+                                                 map (\x -> "(* " <> x <> " *)") rest
                           in T.unlines lines
 
 -- | Generic module prelude. We reexport all of the submodules.
@@ -930,7 +936,7 @@ writeModuleInfo verbose dirPrefix minfo = do
   let submodulePaths = map (modulePath) (M.elems (submodules minfo))
       -- We reexport any submodules.
       submoduleExports = map dotWithPrefix submodulePaths
-      fname = modulePathToFilePath dirPrefix (modulePath minfo) ".hs"
+      fname = modulePathToFilePath dirPrefix (modulePath minfo) ".ml"
       dirname = takeDirectory fname
       code = codeToText (moduleCode minfo)
       pragmas = languagePragmas (Set.toList $ modulePragmas minfo)
@@ -949,11 +955,14 @@ writeModuleInfo verbose dirPrefix minfo = do
   when verbose $ putStrLn ((T.unpack . dotWithPrefix . modulePath) minfo
                            ++ " -> " ++ fname)
   createDirectoryIfMissing True dirname
-  utf8WriteFile fname (T.unlines [pragmas, optionsGHC, haddock, cppMacros,
-                                 prelude, imports, deps, code])
-  when (not . isCodeEmpty $ bootCode minfo) $ do
-    let bootFName = modulePathToFilePath dirPrefix (modulePath minfo) ".hs-boot"
-    utf8WriteFile bootFName (genHsBoot minfo)
+  -- utf8WriteFile fname (T.unlines [pragmas, optionsGHC, haddock, cppMacros,
+  --                                prelude, imports, deps, code])
+  
+  utf8WriteFile fname (T.unlines [haddock, code])
+
+  -- when (not . isCodeEmpty $ bootCode minfo) $ do
+  --   let bootFName = modulePathToFilePath dirPrefix (modulePath minfo) ".hs-boot"
+  --   utf8WriteFile bootFName (genHsBoot minfo)
 
 -- | Generate the .hs-boot file for the given module.
 genHsBoot :: ModuleInfo -> Text

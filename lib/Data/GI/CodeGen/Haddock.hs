@@ -27,7 +27,7 @@ import Data.GI.GIR.Callable (Callable(..))
 import Data.GI.GIR.Deprecation (DeprecationInfo(..))
 import Data.GI.GIR.Documentation (Documentation(..))
 
-import Data.GI.CodeGen.Code (CodeGen, config, line, HaddockSection,
+import Data.GI.CodeGen.Code (CodeGen, config, line, commentLine, HaddockSection,
                              getC2HMap, addSectionFormattedDocs)
 import Data.GI.CodeGen.Config (modName, overrides)
 import Data.GI.CodeGen.CtoHaskellMap (Hyperlink(..))
@@ -205,8 +205,8 @@ deprecatedPragma _  Nothing = return ()
 deprecatedPragma name (Just info) = do
   c2h <- getC2HMap
   docBase <- getDocBase
-  line $ "{-# DEPRECATED " <> name <> " " <>
-    (T.pack . show) (note <> reason c2h docBase) <> " #-}"
+  commentLine $ "DEPRECATED " <> name <> " " <>
+    (T.pack . show) (note <> reason c2h docBase)
         where reason c2h docBase =
                 case deprecationMessage info of
                   Nothing -> []
@@ -243,7 +243,7 @@ writeHaddock pos haddock =
         DocAfterSymbol -> "^"
       lines = case T.lines haddock of
         [] -> []
-        (first:rest) -> ("-- " <> marker <> " " <> first) : map ("-- " <>) rest
+        (first:rest) -> ("(* " <> marker <> " " <> first <> " *)") : map (\x -> "(* " <> x <> " *)") rest
   in mapM_ line lines
 
 -- | Write the documentation for the given argument.

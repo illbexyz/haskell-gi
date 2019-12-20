@@ -425,7 +425,7 @@ genSignal s@(Signal { sigName = sn, sigCallable = cb }) on =
   handleCGExc (processSignalError s on) $ do
   let on' = upperName on
 
-  line $ "-- signal " <> on' <> "::" <> sn
+  commentLine $ "signal " <> on' <> "::" <> sn
 
   let sn' = signalHaskellName sn
       signalConnectorName = on' <> ucFirst sn'
@@ -489,7 +489,7 @@ genSignal s@(Signal { sigName = sn, sigCallable = cb }) on =
         indent $ genSignalConnector s cbType "SignalConnectAfter" "Nothing"
       export docSection afterName
 
-  cppIf CPPOverloading (genSignalInfoInstance on s)
+  -- cppIf CPPOverloading (genSignalInfoInstance on s)
 
   where
     onDoc :: Text
