@@ -30,6 +30,7 @@ runhaskell Setup.hs install
 if [ ! -d "./dist/$bindings_lib/dist" ]
 then
     pushd bindings
+        rm -rf $bindings_lib/GI $bindings_lib/dist
         cabal new-run genBuildInfo $bindings_lib
         pushd $bindings_lib
             cabal v1-install
@@ -37,6 +38,6 @@ then
     popd
 fi
 
-pushd bindings/$bindings_lib
-    rm -rf GI dist; cabal v1-build
-popd
+# pushd bindings/$bindings_lib
+#     rm -rf GI dist; cabal v1-build
+# popd
