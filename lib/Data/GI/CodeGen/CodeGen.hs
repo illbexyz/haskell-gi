@@ -15,7 +15,7 @@ import qualified Data.Text as T
 import Data.Text (Text)
 
 import Data.GI.CodeGen.API
-import Data.GI.CodeGen.Callable (genCCallableWrapper)
+import Data.GI.CodeGen.Callable (genCCallableWrapper, callableHOutArgs, hOutType)
 import Data.GI.CodeGen.Constant (genConstant)
 import Data.GI.CodeGen.Code
 import Data.GI.CodeGen.EnumFlags (genEnum, genFlags)
@@ -38,9 +38,11 @@ import Data.GI.CodeGen.Struct (genStructOrUnionFields, extractCallbacksInStruct,
                   fixAPIStructs, ignoreStruct, genZeroStruct, genZeroUnion,
                   genWrappedPtr)
 import Data.GI.CodeGen.SymbolNaming (upperName, classConstraint, noName,
-                                     submoduleLocation, lowerName, qualifiedAPI)
+                                     submoduleLocation, lowerName, qualifiedAPI,
+                                     camelCaseToSnakeCase)
 import Data.GI.CodeGen.Type
-import Data.GI.CodeGen.Util (tshow)
+import Data.GI.CodeGen.Util (tshow, lcFirst)
+import Debug.Trace
 
 -- | Standard derived instances for newtypes wrapping @ManagedPtr@s.
 newtypeDeriving :: CodeGen ()
@@ -243,24 +245,26 @@ genMethod cn m@(Method {
                   methodSymbol = sym,
                   methodCallable = c,
                   methodType = t
-                }) = do
-    let name' = upperName cn
-    returnsGObject <- maybe (return False) isGObject (returnType c)
-    line $ "-- method " <> name' <> "::" <> name mn
-    line $ "-- method type : " <> tshow t
-    let -- Mangle the name to namespace it to the class.
-        mn' = mn { name = name cn <> "_" <> name mn }
-    let c'  = if Constructor == t
-              then fixConstructorReturnType returnsGObject cn c
-              else c
-        c'' = if OrdinaryMethod == t
-              then fixMethodArgs c'
-              else c'
-    genCCallableWrapper mn' sym c''
-    export (NamedSubsection MethodSection $ lowerName mn) (lowerName mn')
+                }) =
+    when (t /= Constructor) $ do
+      returnsGObject <- maybe (return False) isGObject (returnType c)
 
-    -- cppIf CPPOverloading $
-    --      genMethodInfo cn (m {methodCallable = c''})
+      -- commentLine $ "method " <> name' <> "::" <> name mn
+      -- commentLine $ "method type : " <> tshow t
+
+      let c'  = if Constructor == t
+                then fixConstructorReturnType returnsGObject cn c
+                else c
+          c'' = if OrdinaryMethod == t
+                then fixMethodArgs c'
+                else c'
+
+      genCCallableWrapper mn sym c''
+      
+      -- export (NamedSubsection MethodSection $ lowerName mn) (lowerName mn')
+
+      -- cppIf CPPOverloading $
+      --      genMethodInfo cn (m {methodCallable = c''})
 
 -- | Generate the GValue instances for the given GObject.
 genGObjectGValueInstance :: Name -> Text -> CodeGen ()
@@ -343,9 +347,9 @@ genGObjectCasts n cn_ parents = do
 -- GObject. This is the case for everything except the ParamSpec* set
 -- of objects, we deal with these separately.
 genObject :: Name -> Object -> CodeGen ()
-genObject n o = do
-  if (name n) /= "Button" then
-    line $ "-- Ignored: I'm generating only button"
+genObject n o =
+  if name n /= "Button" then
+    commentLine "Ignored: I'm generating only button"
   else do
     let name' = upperName n
     let t = TInterface n
@@ -370,10 +374,30 @@ genObject n o = do
 
       -- cppIf CPPOverloading $
       --     fullObjectMethodList n o >>= genMethodList n
+      let nspace = namespace n
+      let objectName = name n
+      line "open Gobject"
+      line "open Data"
+      line "module Object = GtkObject"
+      blank
+      line "open Gtk"
+      blank
+      line "module S = struct"
+      indent $ line $ "open " <> nspace <> "Signal"
+      indent $ do
+        forM_ (objSignals o) $ \s -> genSignal s n
+        line $ "let create pl : "
+            <> nspace <> "." <> T.toLower objectName <> " obj = Object.make "
+            <> "\"" <> nspace <> objectName <> "\" pl"
+      line "end"
 
-      forM_ (objSignals o) $ \s -> genSignal s n
+      blank
 
-      genObjectProperties n o
+      line "module P = struct"
+      indent $ genObjectProperties n o
+      line "end"
+
+      blank
       -- cppIf CPPOverloading $
       --     genNamespacedPropLabels n (objProperties o) (objMethods o)
       -- cppIf CPPOverloading $
@@ -382,12 +406,14 @@ genObject n o = do
       -- Methods
       forM_ (objMethods o) $ \f -> do
         let mn = methodName f
-        handleCGExc (\e -> line ("-- XXX Could not generate method "
+        handleCGExc (\e -> commentLine ("XXX Could not generate method "
                                 <> name' <> "::" <> name mn <> "\n"
-                                <> "-- Error was : " <> describeCGError e)
-                    >> (cppIf CPPOverloading $
-                            genUnsupportedMethodInfo n f))
+                                <> "Error was : " <> describeCGError e))
                     (genMethod n f)
+                    -- >> (cppIf CPPOverloading $
+                    --         genUnsupportedMethodInfo n f))
+
+                    
 
 genInterface :: Name -> Interface -> CodeGen ()
 genInterface n iface = do
@@ -480,16 +506,27 @@ symbolFromFunction sym = do
             sym1 == sym2 && movedTo == Nothing
         hasSymbol _ _ = False
 
+-- genAPI :: Name -> API -> CodeGen ()
+-- genAPI n (APIConst c) = genConstant n c
+-- genAPI n (APIFunction f) = genFunction n f
+-- genAPI n (APIEnum e) = genEnum n e
+-- genAPI n (APIFlags f) = genFlags n f
+-- genAPI n (APICallback c) = genCallback n c
+-- genAPI n (APIStruct s) = genStruct n s
+-- genAPI n (APIUnion u) = genUnion n u
+-- genAPI n (APIObject o) = genObject n o
+-- genAPI n (APIInterface i) = genInterface n i
+
 genAPI :: Name -> API -> CodeGen ()
-genAPI n (APIConst c) = genConstant n c
-genAPI n (APIFunction f) = genFunction n f
-genAPI n (APIEnum e) = genEnum n e
-genAPI n (APIFlags f) = genFlags n f
-genAPI n (APICallback c) = genCallback n c
-genAPI n (APIStruct s) = genStruct n s
-genAPI n (APIUnion u) = genUnion n u
+genAPI _n (APIConst _c) = return ()
+genAPI _n (APIFunction _f) = return ()
+genAPI _n (APIEnum _e) = return ()
+genAPI _n (APIFlags _f) = return ()
+genAPI _n (APICallback _c) = return ()
+genAPI _n (APIStruct _s) = return ()
+genAPI _n (APIUnion _u) = return ()
 genAPI n (APIObject o) = genObject n o
-genAPI n (APIInterface i) = genInterface n i
+genAPI _n (APIInterface _i) = return ()
 
 -- | Generate the code for a given API in the corresponding module.
 genAPIModule :: Name -> API -> CodeGen ()

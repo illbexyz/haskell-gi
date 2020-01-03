@@ -43,13 +43,14 @@ import Data.GI.CodeGen.Type
 import Data.GI.CodeGen.Util
 
 import Text.Show.Pretty (ppShow)
+import Debug.Trace
 
 hOutType :: Callable -> [Arg] -> ExcCodeGen TypeRep
 hOutType callable outArgs = do
   hReturnType <- case returnType callable of
-                   Nothing -> return $ con0 "()"
+                   Nothing -> return $ con0 "unit"
                    Just r -> if skipRetVal callable
-                             then return $ con0 "()"
+                             then return $ con0 "unit"
                              else haskellType r
   hOutArgTypes <- forM outArgs $ \outarg ->
                   wrapMaybe outarg >>= bool
@@ -68,31 +69,36 @@ hOutType callable outArgs = do
 
 -- | Generate a foreign import for the given C symbol. Return the name
 -- of the corresponding Haskell identifier.
-mkForeignImport :: Text -> Callable -> CodeGen Text
-mkForeignImport cSymbol callable = do
+mkForeignImport :: Name -> Text -> Callable -> CodeGen Text
+mkForeignImport mn cSymbol callable = do
+    traceShowM mn
+    traceShowM callable
+    traceM ""
     line first
     indent $ do
         mapM_ (\a -> line =<< fArgStr a) (args callable)
         when (callableThrows callable) $
                line $ padTo 40 "Ptr (Ptr GError) -> " <> "-- error"
         line =<< last
+        line $ "= \"ml_" <> cSymbol <> "\""
     return hSymbol
     where
     hSymbol = if T.any (== '_') cSymbol
               then lcFirst cSymbol
               else "_" <> cSymbol
-    first = "foreign import ccall \"" <> cSymbol <> "\" " <> hSymbol <> " :: "
+    first = "external " <> camelCaseToSnakeCase (lowerName mn) <> " : "
     fArgStr arg = do
-        ft <- foreignType $ argType arg
-        let ft' = if direction arg == DirectionIn || argCallerAllocates arg
-                  then ft
-                  else ptr ft
-        let start = typeShow ft' <> " -> "
-        return $ padTo 40 start <> "-- " <> (argCName arg)
-                   <> " : " <> tshow (argType arg)
-    last = typeShow <$> io <$> case returnType callable of
-                                 Nothing -> return $ con0 "()"
-                                 Just r  -> foreignType r
+        ocamlType <- haskellType $ argType arg
+        -- ft <- foreignType $ argType arg
+        -- let ft' = if direction arg == DirectionIn || argCallerAllocates arg
+        --           then ft
+        --           else ptr ft
+        let start = typeShow ocamlType <> " -> "
+        return $ padTo 40 start <> "(* " <> argCName arg
+                   <> " : " <> tshow (argType arg) <> " *)"
+    last = typeShow <$> case returnType callable of
+                                 Nothing -> return $ con0 "unit"
+                                 Just r  -> haskellType r
 
 -- | Make a wrapper for foreign `FunPtr`s of the given type. Return
 -- the name of the resulting dynamic Haskell wrapper.
@@ -793,6 +799,26 @@ genHaskellWrapper n symbol callable expose = group $ do
     indent (genWrapperBody n symbol callable hInArgs hOutArgs omitted expose)
     return name
 
+-- | Generate a Haskell wrapper for the given foreign function.
+genOCamlWrapper :: Name -> ForeignSymbol -> Callable ->
+                     ExposeClosures -> ExcCodeGen Text
+genOCamlWrapper n symbol callable expose = group $ do
+    let name = case symbol of
+                 KnownForeignSymbol _ -> lowerName n
+                 DynamicForeignSymbol _ -> callbackDynamicWrapper (upperName n)
+        (hInArgs, omitted) = callableHInArgs callable expose
+        hOutArgs = callableHOutArgs callable
+
+    line $ name <> " ::"
+    formatHSignature callable symbol expose
+    let argNames = case symbol of
+                     KnownForeignSymbol _ -> map escapedArgName hInArgs
+                     DynamicForeignSymbol _ ->
+                         funPtr : map escapedArgName hInArgs
+    line $ name <> " " <> T.intercalate " " argNames <> " = liftIO $ do"
+    indent (genWrapperBody n symbol callable hInArgs hOutArgs omitted expose)
+    return name
+
 -- | Generate the body of the Haskell wrapper for the given foreign symbol.
 genWrapperBody :: Name -> ForeignSymbol -> Callable ->
                   [Arg] -> [Arg] -> [Arg] ->
@@ -896,11 +922,11 @@ genCallableDebugInfo callable =
       commentShow "Args" (args callable)
       commentShow "Lengths" (arrayLengths callable)
       commentShow "returnType" (returnType callable)
-      line $ "-- throws : " <> (tshow $ callableThrows callable)
-      line $ "-- Skip return : " <> (tshow $ skipReturn callable)
+      commentLine $ "throws : " <> (tshow $ callableThrows callable)
+      commentLine $ "Skip return : " <> (tshow $ skipReturn callable)
       when (skipReturn callable && returnType callable /= Just (TBasicType TBoolean)) $
-           do line "-- XXX return value ignored, but it is not a boolean."
-              line "--     This may be a memory leak?"
+           do commentLine "XXX return value ignored, but it is not a boolean."
+              commentLine "    This may be a memory leak?"
   where commentShow :: Show a => Text -> a -> CodeGen ()
         commentShow prefix s =
           let padding = T.replicate (T.length prefix + 2) " "
@@ -908,23 +934,24 @@ genCallableDebugInfo callable =
                          [] -> []
                          (f:rest) -> "-- " <> prefix <> ": " <> f :
                                      map (("-- " <> padding) <>) rest
-          in mapM_ line padded
+          in mapM_ commentLine  padded
 
 -- | Generate a wrapper for a known C symbol.
 genCCallableWrapper :: Name -> Text -> Callable -> ExcCodeGen ()
-genCCallableWrapper n cSymbol callable = do
+genCCallableWrapper mn cSymbol callable = do
+  
   genCallableDebugInfo callable
 
   let callable' = fixupCallerAllocates callable
 
-  hSymbol <- mkForeignImport cSymbol callable'
+  _hSymbol <- mkForeignImport mn cSymbol callable'
 
   blank
 
-  deprecatedPragma (lowerName n) (callableDeprecated callable)
-  writeDocumentation DocBeforeSymbol (callableDocumentation callable)
-  void (genHaskellWrapper n (KnownForeignSymbol hSymbol) callable'
-         WithoutClosures)
+  -- deprecatedPragma (lowerName mn) (callableDeprecated callable)
+  -- writeDocumentation DocBeforeSymbol (callableDocumentation callable)
+  -- void (genHaskellWrapper mn (KnownForeignSymbol hSymbol) callable'
+  --        WithoutClosures)
 
 -- | For callbacks we do not need to keep track of which arguments are
 -- closures.

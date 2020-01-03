@@ -26,7 +26,7 @@ fi
 runhaskell Setup.hs build
 runhaskell Setup.hs install
 
-# If the bindings haven't 
+# If the bindings haven't been generated yet
 if [ ! -d "./dist/$bindings_lib/dist" ]
 then
     pushd bindings
@@ -36,6 +36,7 @@ then
             cabal v1-install
         popd
     popd
+    cp ./base-ocaml/ocaml/* "./bindings/$bindings_lib/GI/Gtk/Objects/"
 fi
 
 # pushd bindings/$bindings_lib

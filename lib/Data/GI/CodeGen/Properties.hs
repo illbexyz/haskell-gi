@@ -28,10 +28,11 @@ import Data.GI.CodeGen.Inheritance (fullObjectPropertyList, fullInterfacePropert
 import Data.GI.CodeGen.SymbolNaming (lowerName, upperName, classConstraint,
                                      hyphensToCamelCase, qualifiedSymbol,
                                      typeConstraint, callbackDynamicWrapper,
-                                     callbackHaskellToForeign,
-                                     callbackWrapperAllocator)
+                                     callbackHaskellToForeign, underscoresToHyphens,
+                                     callbackWrapperAllocator, hyphensToUnderscores)
 import Data.GI.CodeGen.Type
 import Data.GI.CodeGen.Util
+import Debug.Trace
 
 propTypeStr :: Type -> CodeGen Text
 propTypeStr t = case t of
@@ -241,6 +242,48 @@ genPropertyGetter getter n docSection prop = group $ do
            <> " obj \"" <> propName prop <> "\"" <> constructorArg
   export docSection getter
 
+
+genPropertyOCaml :: Text -> Name -> HaddockSection -> Property -> ExcCodeGen ()
+genPropertyOCaml getter n docSection prop = group $ do
+  isNullable <- typeIsNullable (propType prop)
+  let isMaybe = isNullable && propReadNullable prop /= Just False
+  constructorType <- isoHaskellType (propType prop)
+  tStr <- propTypeStr $ propType prop
+  cls <- classConstraint n
+  let constraints = "(MonadIO m, " <> cls <> " o)"
+      outType = if isMaybe
+                then maybeT constructorType
+                else constructorType
+      returnType = typeShow $ "m" `con` [outType]
+      getProp = if isNullable && not isMaybe
+                then "checkUnexpectedNothing \"" <> getter
+                         <> "\" $ B.Properties.getObjectProperty" <> tStr
+                else "B.Properties.getObjectProperty" <> tStr
+  -- Some property getters require in addition a constructor, which
+  -- will convert the foreign value to the wrapped Haskell one.
+  constructorArg <-
+    if tStr `elem` ["Object", "Boxed"]
+    then return $ " " <> typeShow constructorType
+    else (if tStr == "Callback"
+          then do
+             callbackType <- haskellType (propType prop)
+             return $ " " <> callbackDynamicWrapper (typeShow callbackType)
+          else return "")
+
+  -- TODO: uncomment next line
+  -- writeHaddock DocBeforeSymbol (getterDoc n prop) 
+  -- line $ getter <> " :: " <> constraints <>
+  --               " => o -> " <> returnType
+  -- line $ getter <> " obj = liftIO $ " <> getProp
+  --          <> " obj \"" <> propName prop <> "\"" <> constructorArg
+  -- export docSection getter
+  ocamlConverter <- typeToOCamlConverter $ propType prop
+  line $ "let " <> getter <> " : " <> "(" <> "[>`" <> lowerName n <> "],_) property ="
+  indent $ line $ "{"
+    <> "name=\"" <> underscoresToHyphens getter <> "\"; "
+    <> "conv=" <> ocamlConverter
+    <> "}"
+
 -- | Generate documentation for the given constructor.
 constructorDoc :: Property -> Text
 constructorDoc prop = T.unlines [
@@ -328,7 +371,7 @@ accessorOrUndefined :: Bool -> Text -> Name -> Text -> CodeGen Text
 accessorOrUndefined available accessor owner@(Name _ on) cName =
     if not available
     then return "undefined"
-    else qualifiedSymbol (accessor <> on <> cName) owner
+    else qualifiedSymbol cName owner
 
 -- | The name of the type encoding the information for the property of
 -- the object.
@@ -340,6 +383,7 @@ infoType owner prop =
 
 genOneProperty :: Name -> Property -> ExcCodeGen ()
 genOneProperty owner prop = do
+  traceM $ "Prop: " <> show prop
   let name = upperName owner
       cName = (hyphensToCamelCase . propName) prop
       docSection = NamedSubsection PropertySection (lcFirst cName)
@@ -350,7 +394,7 @@ genOneProperty owner prop = do
       readable = PropertyReadable `elem` flags
       constructOnly = PropertyConstructOnly `elem` flags
 
-  addSectionDocumentation docSection (propDoc prop)
+  -- addSectionDocumentation docSection (propDoc prop)
 
   -- For properties the meaning of having transfer /= TransferNothing
   -- is not clear (what are the right semantics for GValue setters?),
@@ -367,12 +411,13 @@ genOneProperty owner prop = do
        notImplementedError $ "Property is not readable, writable, or constructible: "
                                <> tshow pName
 
-  group $ do
-    line $ "-- VVV Prop \"" <> propName prop <> "\""
-    line $ "   -- Type: " <> tshow (propType prop)
-    line $ "   -- Flags: " <> tshow (propFlags prop)
-    line $ "   -- Nullable: " <> tshow (propReadNullable prop,
-                                        propWriteNullable prop)
+  -- TODO: uncomment next line
+  -- group $ do
+  --   commentLine $ "VVV Prop \"" <> propName prop <> "\""
+  --   commentLine $ "   Type: " <> tshow (propType prop)
+  --   commentLine $ "   Flags: " <> tshow (propFlags prop)
+  --   commentLine $ "   Nullable: " <> tshow (propReadNullable prop,
+  --                                       propWriteNullable prop)
 
   getter <- accessorOrUndefined readable "get" owner cName
   setter <- accessorOrUndefined writable "set" owner cName
@@ -382,70 +427,70 @@ genOneProperty owner prop = do
                                 propWriteNullable prop /= Just False)
            "clear" owner cName
 
-  when (getter /= "undefined") $ genPropertyGetter getter owner docSection prop
-  when (setter /= "undefined") $ genPropertySetter setter owner docSection prop
-  when (constructor /= "undefined") $
-       genPropertyConstructor constructor owner docSection prop
-  when (clear /= "undefined") $ genPropertyClear clear owner docSection prop
+  when (getter /= "undefined") $ genPropertyOCaml getter owner docSection prop
+  -- when (setter /= "undefined") $ genPropertySetter setter owner docSection prop
+  -- when (constructor /= "undefined") $
+  --      genPropertyConstructor constructor owner docSection prop
+  -- when (clear /= "undefined") $ genPropertyClear clear owner docSection prop
 
-  outType <- if not readable
-             then return "()"
-             else do
-               sOutType <- if isNullable && propReadNullable prop /= Just False
-                           then typeShow . maybeT <$> isoHaskellType (propType prop)
-                           else typeShow <$> isoHaskellType (propType prop)
-               return $ if T.any (== ' ') sOutType
-                        then parenthesize sOutType
-                        else sOutType
+  -- outType <- if not readable
+  --            then return "()"
+  --            else do
+  --              sOutType <- if isNullable && propReadNullable prop /= Just False
+  --                          then typeShow . maybeT <$> isoHaskellType (propType prop)
+  --                          else typeShow <$> isoHaskellType (propType prop)
+  --              return $ if T.any (== ' ') sOutType
+  --                       then parenthesize sOutType
+  --                       else sOutType
 
-  -- Polymorphic #label style lens
-  cppIf CPPOverloading $ do
-    cls <- classConstraint owner
-    inConstraint <- if writable || constructOnly
-                    then propSetTypeConstraint (propType prop)
-                    else return "(~) ()"
-    transferConstraint <- if writable || constructOnly
-                          then propTransferTypeConstraint (propType prop)
-                          else return "(~) ()"
-    transferType <- if writable || constructOnly
-                    then propTransferType (propType prop)
-                    else return "()"
-    let allowedOps = (if writable
-                      then ["'AttrSet", "'AttrConstruct"]
-                      else [])
-                     <> (if constructOnly
-                         then ["'AttrConstruct"]
-                         else [])
-                     <> (if readable
-                         then ["'AttrGet"]
-                         else [])
-                     <> (if isNullable && propWriteNullable prop /= Just False
-                         then ["'AttrClear"]
-                         else [])
-    it <- infoType owner prop
-    export docSection it
-    bline $ "data " <> it
-    line $ "instance AttrInfo " <> it <> " where"
-    indent $ do
-            line $ "type AttrAllowedOps " <> it
-                     <> " = '[ " <> T.intercalate ", " allowedOps <> "]"
-            line $ "type AttrBaseTypeConstraint " <> it <> " = " <> cls
-            line $ "type AttrSetTypeConstraint " <> it
-                     <> " = " <> inConstraint
-            line $ "type AttrTransferTypeConstraint " <> it
-                     <> " = " <> transferConstraint
-            line $ "type AttrTransferType " <> it <> " = " <> transferType
-            line $ "type AttrGetType " <> it <> " = " <> outType
-            line $ "type AttrLabel " <> it <> " = \"" <> propName prop <> "\""
-            line $ "type AttrOrigin " <> it <> " = " <> name
-            line $ "attrGet = " <> getter
-            line $ "attrSet = " <> setter
-            if writable || constructOnly
-              then do line $ "attrTransfer _ v = do"
-                      indent $ genPropTransfer "v" (propType prop)
-              else line $ "attrTransfer _ = undefined"
-            line $ "attrConstruct = " <> constructor
-            line $ "attrClear = " <> clear
+  -- -- Polymorphic #label style lens
+  -- cppIf CPPOverloading $ do
+  --   cls <- classConstraint owner
+  --   inConstraint <- if writable || constructOnly
+  --                   then propSetTypeConstraint (propType prop)
+  --                   else return "(~) ()"
+  --   transferConstraint <- if writable || constructOnly
+  --                         then propTransferTypeConstraint (propType prop)
+  --                         else return "(~) ()"
+  --   transferType <- if writable || constructOnly
+  --                   then propTransferType (propType prop)
+  --                   else return "()"
+  --   let allowedOps = (if writable
+  --                     then ["'AttrSet", "'AttrConstruct"]
+  --                     else [])
+  --                    <> (if constructOnly
+  --                        then ["'AttrConstruct"]
+  --                        else [])
+  --                    <> (if readable
+  --                        then ["'AttrGet"]
+  --                        else [])
+  --                    <> (if isNullable && propWriteNullable prop /= Just False
+  --                        then ["'AttrClear"]
+  --                        else [])
+  --   it <- infoType owner prop
+  --   export docSection it
+  --   bline $ "data " <> it
+  --   line $ "instance AttrInfo " <> it <> " where"
+  --   indent $ do
+  --           line $ "type AttrAllowedOps " <> it
+  --                    <> " = '[ " <> T.intercalate ", " allowedOps <> "]"
+  --           line $ "type AttrBaseTypeConstraint " <> it <> " = " <> cls
+  --           line $ "type AttrSetTypeConstraint " <> it
+  --                    <> " = " <> inConstraint
+  --           line $ "type AttrTransferTypeConstraint " <> it
+  --                    <> " = " <> transferConstraint
+  --           line $ "type AttrTransferType " <> it <> " = " <> transferType
+  --           line $ "type AttrGetType " <> it <> " = " <> outType
+  --           line $ "type AttrLabel " <> it <> " = \"" <> propName prop <> "\""
+  --           line $ "type AttrOrigin " <> it <> " = " <> name
+  --           line $ "attrGet = " <> getter
+  --           line $ "attrSet = " <> setter
+  --           if writable || constructOnly
+  --             then do line $ "attrTransfer _ v = do"
+  --                     indent $ genPropTransfer "v" (propType prop)
+  --             else line $ "attrTransfer _ = undefined"
+  --           line $ "attrConstruct = " <> constructor
+  --           line $ "attrClear = " <> clear
 
 -- | Generate a placeholder property for those cases in which code
 -- generation failed.
@@ -474,10 +519,10 @@ genPlaceholderProperty owner prop = do
     line $ "attrTransfer = undefined"
 
 genProperties :: Name -> [Property] -> [Text] -> CodeGen ()
-genProperties n ownedProps allProps = do
+genProperties n ownedProps _allProps = do
   let name = upperName n
 
-  forM_ ownedProps $ \prop -> do
+  forM_ ownedProps $ \prop ->
       handleCGExc (\err -> do
                      line $ "-- XXX Generation of property \""
                               <> propName prop <> "\" of object \""
@@ -485,12 +530,12 @@ genProperties n ownedProps allProps = do
                      cppIf CPPOverloading (genPlaceholderProperty n prop))
                   (genOneProperty n prop)
 
-  cppIf CPPOverloading $ do
-    let propListType = name <> "AttributeList"
-    line $ "instance O.HasAttributeList " <> name
-    line $ "type instance O.AttributeList " <> name <> " = " <> propListType
-    line $ "type " <> propListType <> " = ('[ "
-             <> T.intercalate ", " allProps <> "] :: [(Symbol, *)])"
+  -- cppIf CPPOverloading $ do
+  --   let propListType = name <> "AttributeList"
+  --   line $ "instance O.HasAttributeList " <> name
+  --   line $ "type instance O.AttributeList " <> name <> " = " <> propListType
+  --   line $ "type " <> propListType <> " = ('[ "
+  --            <> T.intercalate ", " allProps <> "] :: [(Symbol, *)])"
 
 -- | Generate gtk2hs compatible attribute labels (to ease
 -- porting). These are namespaced labels, for examples

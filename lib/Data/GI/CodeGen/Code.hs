@@ -33,6 +33,7 @@ module Data.GI.CodeGen.Code
     , increaseIndent
     , bline
     , line
+    , cline
     , commentLine
     , blank
     , group
@@ -101,8 +102,6 @@ import Data.GI.CodeGen.ModulePath (ModulePath(..), dotModulePath, (/.))
 import Data.GI.CodeGen.Type (Type(..))
 import Data.GI.CodeGen.Util (tshow, terror, padTo, utf8WriteFile)
 import Data.GI.CodeGen.ProjectInfo (authors, license, maintainers)
-
-import Debug.Trace
 
 -- | Set of CPP conditionals understood by the code generator.
 data CPPConditional = CPPIf Text -- ^ #if Foo
@@ -178,6 +177,7 @@ data ModuleInfo = ModuleInfo {
       modulePath :: ModulePath -- ^ Full module name: ["Gtk", "Label"].
     , moduleCode :: Code       -- ^ Generated code for the module.
     , bootCode   :: Code       -- ^ Interfaces going into the .hs-boot file.
+    , cCode      :: Code       -- ^ C stubs' code
     , submodules :: M.Map Text ModuleInfo -- ^ Indexed by the relative
                                           -- module name.
     , moduleDeps :: Deps -- ^ Set of dependencies for this module.
@@ -213,6 +213,7 @@ emptyModule :: ModulePath -> ModuleInfo
 emptyModule m = ModuleInfo { modulePath = m
                            , moduleCode = emptyCode
                            , bootCode = emptyCode
+                           , cCode = emptyCode
                            , submodules = M.empty
                            , moduleDeps = Set.empty
                            , moduleExports = Seq.empty
@@ -287,6 +288,7 @@ runCodeGen cg cfg state =
 -- result to the original structure later.
 cleanInfo :: ModuleInfo -> ModuleInfo
 cleanInfo info = info { moduleCode = emptyCode, submodules = M.empty,
+                        cCode = emptyCode,
                         bootCode = emptyCode, moduleExports = Seq.empty,
                         qualifiedImports = Set.empty,
                         sectionDocs = M.empty, moduleMinBase = Base47 }
@@ -335,6 +337,7 @@ mergeInfoState oldState newState =
         newPragmas = Set.union (modulePragmas oldState) (modulePragmas newState)
         newGHCOpts = Set.union (moduleGHCOpts oldState) (moduleGHCOpts newState)
         newFlags = Set.union (moduleFlags oldState) (moduleFlags newState)
+        newCCode = cCode oldState <> cCode newState
         newBoot = bootCode oldState <> bootCode newState
         newDocs = sectionDocs oldState <> sectionDocs newState
         newMinBase = max (moduleMinBase oldState) (moduleMinBase newState)
@@ -342,7 +345,7 @@ mergeInfoState oldState newState =
                  moduleExports = newExports, qualifiedImports = newImports,
                  modulePragmas = newPragmas,
                  moduleGHCOpts = newGHCOpts, moduleFlags = newFlags,
-                 bootCode = newBoot, sectionDocs = newDocs,
+                 bootCode = newBoot, cCode = newCCode, sectionDocs = newDocs,
                  moduleMinBase = newMinBase }
 
 -- | Merge the infos, including code too.
@@ -561,10 +564,20 @@ tellCode :: CodeToken -> CodeGen ()
 tellCode c = modify' (\(cgs, s) -> (cgs, s {moduleCode = moduleCode s <>
                                                          codeSingleton c}))
 
+-- | Add some code to the current C stubs generator.
+-- tellCCode :: CodeToken -> CodeGen ()
+-- tellCCode c = modify' (\(cgs, s) -> (cgs, s {cCode = cCode s <>
+--                                                          codeSingleton c}))
+
 -- | Print out a (newline-terminated) line.
 line :: Text -> CodeGen ()
 line = tellCode . Line
 
+-- | Print out a (newline-terminated) line in the C stubs' file
+cline :: Text -> CodeGen ()
+cline l = cBoot (line l)
+
+-- | Print out an OCaml's comment line
 commentLine :: Text -> CodeGen ()
 commentLine t = line $ "(* " <> t <> " *)" 
 
@@ -615,6 +628,13 @@ data CPPGuard = CPPOverloading -- ^ Enable overloading
 -- if the specified feature is enabled.
 cppIf :: CPPGuard -> BaseCodeGen e a -> BaseCodeGen e a
 cppIf CPPOverloading = cppIfBlock "defined(ENABLE_OVERLOADING)"
+
+-- | Write the given code into the .c file for the current module.
+cBoot :: BaseCodeGen e a -> BaseCodeGen e a
+cBoot cg = do
+  (x, code) <- recurseCG cg
+  modify' (\(cgs, s) -> (cgs, s {cCode = cCode s <> code}))
+  return x
 
 -- | Write the given code into the .hs-boot file for the current module.
 hsBoot :: BaseCodeGen e a -> BaseCodeGen e a
@@ -924,6 +944,23 @@ moduleImports = T.unlines [
                 , "import qualified Foreign.Ptr as FP"
                 , "import qualified GHC.OverloadedLabels as OL" ]
 
+cOCamlModuleImports :: Text
+cOCamlModuleImports = T.unlines [
+                  "#include <string.h>"
+                  , "#include <gtk/gtk.h>"
+                  , "#include <caml/mlvalues.h>"
+                  , "#include <caml/alloc.h>"
+                  , "#include <caml/memory.h>"
+                  , "#include <caml/callback.h>"
+                  , "#include <caml/fail.h>"
+                  , ""
+                  , "#include \"wrappers.h\""
+                  , "#include \"ml_glib.h\""
+                  , "#include \"ml_gobject.h\""
+                  , "#include \"ml_gdk.h\""
+                  , "#include \"ml_gtk.h\""
+                  , "#include \"gtk_tags.h\"" ]
+
 -- | Like `dotModulePath`, but add a "GI." prefix.
 dotWithPrefix :: ModulePath -> Text
 dotWithPrefix mp = dotModulePath ("GI" <> mp)
@@ -963,6 +1000,9 @@ writeModuleInfo verbose dirPrefix minfo = do
   -- when (not . isCodeEmpty $ bootCode minfo) $ do
   --   let bootFName = modulePathToFilePath dirPrefix (modulePath minfo) ".hs-boot"
   --   utf8WriteFile bootFName (genHsBoot minfo)
+  unless (isCodeEmpty $ cCode minfo) $ do
+    let cStubsFile = modulePathToFilePath dirPrefix (modulePath minfo) ".c"
+    utf8WriteFile cStubsFile (T.unlines [cOCamlModuleImports, genCStubs minfo])
 
 -- | Generate the .hs-boot file for the given module.
 genHsBoot :: ModuleInfo -> Text
@@ -971,6 +1011,10 @@ genHsBoot minfo =
     "module " <> (dotWithPrefix . modulePath) minfo <> " where\n\n" <>
     moduleImports <> "\n" <>
     codeToText (bootCode minfo)
+
+-- | Generate the .hs-boot file for the given module.
+genCStubs :: ModuleInfo -> Text
+genCStubs minfo = codeToText (cCode minfo)
 
 -- | Construct the filename corresponding to the given module.
 modulePathToFilePath :: Maybe FilePath -> ModulePath -> FilePath -> FilePath

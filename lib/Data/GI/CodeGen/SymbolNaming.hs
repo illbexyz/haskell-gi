@@ -11,6 +11,9 @@ module Data.GI.CodeGen.SymbolNaming
 
     , hyphensToCamelCase
     , underscoresToCamelCase
+    , underscoresToHyphens
+    , hyphensToUnderscores
+    , camelCaseToSnakeCase
 
     , callbackCType
     , callbackHTypeWithClosures
@@ -22,6 +25,7 @@ module Data.GI.CodeGen.SymbolNaming
     , callbackClosureGenerator
 
     , signalHaskellName
+    , signalOCamlName
     , signalInfoName
 
     , submoduleLocation
@@ -34,6 +38,7 @@ import Data.Monoid ((<>))
 #endif
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Char as C
 
 import Data.GI.CodeGen.API
 import Data.GI.CodeGen.Code (CodeGen, group, line, exportDecl,
@@ -158,7 +163,7 @@ qualifiedAPI n@(Name ns _) = do
 qualifiedSymbol :: Text -> Name -> CodeGen Text
 qualifiedSymbol s n@(Name ns _) = do
   api <- getAPI (TInterface n)
-  qualified (toModulePath (ucFirst ns) <> submoduleLocation n api) (Name ns s)
+  qualified (toModulePath (ucFirst ns) <> submoduleLocation n api) (Name ns (camelCaseToSnakeCase s))
 
 -- | Save a bit of typing for optional arguments in the case that we
 -- want to pass Nothing.
@@ -171,10 +176,22 @@ noName name' = group $ do
   line $ "no" <> name' <> " = Nothing"
   exportDecl ("no" <> name')
 
+underscoresToHyphens :: Text -> Text
+underscoresToHyphens = T.replace "_" "-"
+
+hyphensToUnderscores :: Text -> Text
+hyphensToUnderscores = T.replace "-" "_"
+
+camelCaseToSnakeCase :: Text -> Text
+camelCaseToSnakeCase = T.concatMap f . lcFirst
+  where f c
+          | C.isUpper c = "_" <> T.toLower (T.singleton c)
+          | otherwise = T.singleton c
+
 -- | Turn a hyphen-separated identifier into camel case.
 --
 -- === __Examples__
--- >>> hyphensToCamelCase "one-sample-string"
+-- >>> hyphensToCamelCase "one-sample-string"b
 -- "OneSampleString"
 hyphensToCamelCase :: Text -> Text
 hyphensToCamelCase = T.concat . map ucFirst . T.split (== '-')
@@ -252,3 +269,6 @@ signalInfoName n signal = do
 signalHaskellName :: Text -> Text
 signalHaskellName sn = let (w:ws) = T.split (== '-') sn
                        in w <> T.concat (map ucFirst ws)
+
+signalOCamlName :: Text -> Text
+signalOCamlName = hyphensToUnderscores

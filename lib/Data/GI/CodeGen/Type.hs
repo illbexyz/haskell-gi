@@ -17,6 +17,7 @@ module Data.GI.CodeGen.Type
     , ptr
     , funptr
     , maybeT
+    , poly
     ) where
 
 #if !MIN_VERSION_base(4,11,0)
@@ -36,6 +37,8 @@ data TypeRep = TypeRep { typeCon     :: TypeCon
 -- since they have special syntax in their Haskell representation.
 data TypeCon = TupleCon
              | ListCon
+             | OptionCon
+             | PolyCon
              | TextualCon Text
   deriving (Eq)
 
@@ -46,6 +49,10 @@ typeShow (TypeRep TupleCon args) =
   "(" <> T.intercalate ", " (map typeShow args) <> ")"
 typeShow (TypeRep ListCon args) =
   "[" <> T.intercalate ", " (map typeShow args) <> "]"
+typeShow (TypeRep OptionCon args) =
+  T.unlines (map typeShow args) <> " option"
+typeShow (TypeRep PolyCon args) =
+  "[>`" <> T.intercalate ", " (map typeShow args) <> "] obj"
 typeShow (TypeRep (TextualCon con) args) =
   T.intercalate " " (con : map (parenthesize . typeShow) args)
   where parenthesize :: Text -> Text
@@ -58,12 +65,16 @@ typeShow (TypeRep (TextualCon con) args) =
 typeConName :: TypeRep -> Text
 typeConName (TypeRep TupleCon _) = "(,)"
 typeConName (TypeRep ListCon _) = "[,]"
+typeConName (TypeRep OptionCon _) = "option"
+typeConName (TypeRep PolyCon _) = "[>`]"
 typeConName (TypeRep (TextualCon s) _) = s
 
 -- | Type constructor applied to the given types.
 con :: Text -> [TypeRep] -> TypeRep
 con "[]" xs = TypeRep {typeCon = ListCon, typeConArgs = xs }
 con "(,)" xs = TypeRep {typeCon = TupleCon, typeConArgs = xs }
+con "option" xs = TypeRep {typeCon = OptionCon, typeConArgs = xs }
+con "[>`]" xs = TypeRep {typeCon = PolyCon, typeConArgs = xs }
 con s xs = TypeRep {typeCon = TextualCon s, typeConArgs = xs}
 
 -- | A shorthand for a type constructor taking no arguments.
@@ -84,4 +95,8 @@ funptr t = "FunPtr" `con` [t]
 
 -- | Embed in the `Maybe` monad.
 maybeT :: TypeRep -> TypeRep
-maybeT t = "Maybe" `con` [t]
+maybeT t =  "option" `con` [t]
+
+-- | Embed in a polymorphic variant
+poly :: TypeRep -> TypeRep
+poly t = "[>`]" `con` [t]

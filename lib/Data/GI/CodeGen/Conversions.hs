@@ -35,6 +35,7 @@ module Data.GI.CodeGen.Conversions
     , mapC
     , literal
     , Constructor(..)
+    , typeToOCamlConverter
     ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -776,9 +777,94 @@ haskellBasicType TFileName = con0 "[Char]"
 haskellBasicType TIntPtr   = con0 "CIntPtr"
 haskellBasicType TUIntPtr  = con0 "CUIntPtr"
 
+ocamlBasicType :: BasicType -> TypeRep
+ocamlBasicType TPtr      = ptr $ con0 "()"
+ocamlBasicType TBoolean  = con0 "bool"
+-- For all the platforms that we support (and those supported by glib)
+-- we have gint == gint32. Encoding this assumption in the types saves
+-- conversions.
+ocamlBasicType TInt      = case sizeOf (0 :: CInt) of
+                               4 -> con0 "int"
+                               n -> error ("Unsupported `gint' length: " ++
+                                           show n)
+ocamlBasicType TUInt     = case sizeOf (0 :: CUInt) of
+                               4 -> con0 "int"
+                               n -> error ("Unsupported `guint' length: " ++
+                                           show n)
+ocamlBasicType TLong     = con0 "int"
+ocamlBasicType TULong    = con0 "int"
+ocamlBasicType TInt8     = con0 "int"
+ocamlBasicType TUInt8    = con0 "int"
+ocamlBasicType TInt16    = con0 "int"
+ocamlBasicType TUInt16   = con0 "int"
+ocamlBasicType TInt32    = con0 "int"
+ocamlBasicType TUInt32   = con0 "int"
+ocamlBasicType TInt64    = con0 "int"
+ocamlBasicType TUInt64   = con0 "int"
+ocamlBasicType TGType    = con0 "GType"
+ocamlBasicType TUTF8     = con0 "string"
+ocamlBasicType TFloat    = con0 "float"
+ocamlBasicType TDouble   = con0 "float"
+ocamlBasicType TUniChar  = con0 "char"
+ocamlBasicType TFileName = con0 "string"
+ocamlBasicType TIntPtr   = undefined 
+ocamlBasicType TUIntPtr  = undefined
+
 -- | This translates GI types to the types used for generated Haskell code.
+-- haskellType :: Type -> CodeGen TypeRep
+-- haskellType (TBasicType bt) = return $ haskellBasicType bt
+-- -- There is no great choice in this case, so we simply pass the
+-- -- pointer along. This is useful for GdkPixbufNotify, for example.
+-- haskellType t@(TCArray False (-1) (-1) (TBasicType TUInt8)) =
+--   foreignType t
+-- haskellType (TCArray _ _ _ (TBasicType TUInt8)) =
+--   return $ "ByteString" `con` []
+-- haskellType (TCArray _ _ _ a) = do
+--   inner <- haskellType a
+--   return $ "[]" `con` [inner]
+-- haskellType (TGArray a) = do
+--   inner <- haskellType a
+--   return $ "[]" `con` [inner]
+-- haskellType (TPtrArray a) = do
+--   inner <- haskellType a
+--   return $ "[]" `con` [inner]
+-- haskellType (TByteArray) = return $ "ByteString" `con` []
+-- haskellType (TGList a) = do
+--   inner <- haskellType a
+--   return $ "[]" `con` [inner]
+-- haskellType (TGSList a) = do
+--   inner <- haskellType a
+--   return $ "[]" `con` [inner]
+-- haskellType (TGHash a b) = do
+--   innerA <- haskellType a
+--   innerB <- haskellType b
+--   return $ "Map.Map" `con` [innerA, innerB]
+-- haskellType TError = return $ "GError" `con` []
+-- haskellType TVariant = return $ "GVariant" `con` []
+-- haskellType TParamSpec = return $ "GParamSpec" `con` []
+-- haskellType (TGClosure (Just inner@(TInterface n))) = do
+--   innerAPI <- getAPI inner
+--   case innerAPI of
+--     APICallback _ -> do
+--       tname <- qualifiedSymbol (callbackCType $ name n) n
+--       return $ "GClosure" `con` [con0 tname]
+--     -- The given inner type does not make sense, so we treat it as an
+--     -- untyped closure.
+--     _ -> haskellType (TGClosure Nothing)
+-- haskellType (TGClosure _) = do
+--   tyvar <- getFreshTypeVariable
+--   return $ "GClosure" `con` [con0 tyvar]
+-- haskellType (TInterface (Name "GObject" "Value")) = return $ "GValue" `con` []
+-- haskellType t@(TInterface n) = do
+--   api <- getAPI t
+--   tname <- qualifiedAPI n
+--   return $ case api of
+--              (APIFlags _) -> "[]" `con` [tname `con` []]
+--              _ -> tname `con` []
+
+-- | This translates GI types to the types used for generated OCaml code.
 haskellType :: Type -> CodeGen TypeRep
-haskellType (TBasicType bt) = return $ haskellBasicType bt
+haskellType (TBasicType bt) = return $ ocamlBasicType bt
 -- There is no great choice in this case, so we simply pass the
 -- pointer along. This is useful for GdkPixbufNotify, for example.
 haskellType t@(TCArray False (-1) (-1) (TBasicType TUInt8)) =
@@ -822,11 +908,13 @@ haskellType (TGClosure _) = do
   return $ "GClosure" `con` [con0 tyvar]
 haskellType (TInterface (Name "GObject" "Value")) = return $ "GValue" `con` []
 haskellType t@(TInterface n) = do
+  let ocamlName = camelCaseToSnakeCase $ name n
+  let tname = lowerName n
   api <- getAPI t
-  tname <- qualifiedAPI n
   return $ case api of
              (APIFlags _) -> "[]" `con` [tname `con` []]
-             _ -> tname `con` []
+             APIEnum _enum -> (T.toTitle (namespace n) <> "Enums." <> ocamlName) `con` []
+             _ -> poly $ T.toLower tname `con` []
 
 -- | Whether the callable has closure arguments (i.e. "user_data"
 -- style arguments).
@@ -1057,3 +1145,46 @@ elementType t = fst <$> elementTypeAndMap t undefined
 -- Return just the map.
 elementMap :: Type -> Text -> Maybe Text
 elementMap t len = snd <$> elementTypeAndMap t len
+
+typeToOCamlConverter :: Type -> ExcCodeGen Text
+typeToOCamlConverter (TBasicType t) =
+  return $ case t of
+    TBoolean  -> "boolean"
+    TInt      -> "int"
+    TUInt     -> "uint"
+    TLong     -> "long"
+    TULong    -> "ulong"
+    TInt8     -> "int8"
+    TUInt8    -> "uint8"
+    TInt16    -> "int16"
+    TUInt16   -> "uint16"
+    TInt32    -> "int32"
+    TUInt32   -> "uint32"
+    TInt64    -> "int64"
+    TUInt64   -> "uint64"
+    TFloat    -> "float"
+    TDouble   -> "double"
+    TUniChar  -> "char"
+    TGType    -> "gobject"
+    TUTF8     -> "string"
+    TFileName -> "string" -- TODO: check
+    TPtr      -> "pointer"
+    TIntPtr   -> "pointer"
+    TUIntPtr  -> "pointer"
+typeToOCamlConverter (TError) = undefined
+typeToOCamlConverter (TVariant) = undefined
+typeToOCamlConverter (TParamSpec) = undefined
+typeToOCamlConverter (TCArray _b _i1 _i2 _t) = undefined
+typeToOCamlConverter (TGArray _t) = undefined
+typeToOCamlConverter (TPtrArray _t) = undefined
+typeToOCamlConverter (TByteArray) = undefined
+typeToOCamlConverter (TGList _t) = undefined
+typeToOCamlConverter (TGSList _t) = undefined
+typeToOCamlConverter (TGHash _t1 _t2) = undefined
+typeToOCamlConverter (TGClosure _m) = undefined
+typeToOCamlConverter (TInterface n) = do
+  let ocamlName = camelCaseToSnakeCase $ name n
+  api <- findAPIByName $ n
+  return $ case api of
+    APIEnum _enum -> T.toTitle (namespace n) <> "Enums." <> ocamlName <> "_conv"
+    _            -> "(gobject : " <> namespace n <> "." <> ocamlName <> " obj data_conv)"
