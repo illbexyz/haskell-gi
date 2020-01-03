@@ -348,8 +348,8 @@ genGObjectCasts n cn_ parents = do
 -- of objects, we deal with these separately.
 genObject :: Name -> Object -> CodeGen ()
 genObject n o =
-  if name n /= "Button" then
-    commentLine "Ignored: I'm generating only button"
+  if (name n /= "Button") && (name n /= "Range") then
+    commentLine "Ignored: I'm generating only button and range"
   else do
     let name' = upperName n
     let t = TInterface n

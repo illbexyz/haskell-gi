@@ -79,6 +79,24 @@ genHaskellCallbackPrototype subsec cb htype expose doc = group $ do
           "A convenience synonym for @`Nothing` :: `Maybe` `" <> typeName <>
           "`@."
 
+argsTypeRep :: [Arg] -> CodeGen [Text]
+argsTypeRep = mapM conv
+  where conv arg = do
+          -- TODO: Using haskellType isn't correct, we must use a 
+          -- Type to OCaml marshaller function
+          ocamlType <- haskellType $ argType arg 
+          return $ typeShow ocamlType
+
+ocamlMarshaller :: [Arg] -> Text -> Text -> CodeGen Text
+ocamlMarshaller args sigName onName = case args of
+  []    -> return "marshal_unit"
+  args' -> do 
+    let sigName' = "\"" <> ucFirst onName <> "::" <> sigName <> "\""
+        len = length args'
+        marsh = "fun f -> marshal_" <> T.pack (show len)
+    argTypes <- argsTypeRep args'
+    return $ T.intercalate " " (marsh : argTypes ++ [sigName', "f"])
+
 -- | The prototype of the callback on the OCaml side (what users of
 -- the binding will see)
 genOCamlCallbackPrototype :: Text -> Callable -> Text -> Text ->
@@ -90,17 +108,17 @@ genOCamlCallbackPrototype subsec cb htype classe expose doc = do
         (hInArgs, _) = callableHInArgs cb expose
         inArgsWithArrows = zip ("" : repeat "-> ") hInArgs
         hOutArgs = callableHOutArgs cb
-    -- TODO: check how to use the above variables
 
     -- export (NamedSubsection SignalSection subsec) name'
     writeDocumentation DocBeforeSymbol doc
 
     ret <- hOutType cb hOutArgs
+    marshaller <- ocamlMarshaller hInArgs subsec classe
 
     line $ "let " <> subsec <> " = {"
         <> "name=\"" <> subsec <> "\"; "
         <> "classe=`" <> classe <> "; "
-        <> "marshaller=marshal_" <> typeShow ret -- TODO: check if marshal_unit is always the right one
+        <> "marshaller=" <> marshaller
         <> "}"
 
     -- line $ "type " <> name' <> " ="
