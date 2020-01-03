@@ -38,3 +38,5 @@ TAGS
 /**/.vscode/
 *.ui~
 *.gresource
+stack*.yaml.lock
+base-ocaml/
