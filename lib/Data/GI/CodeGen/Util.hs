@@ -17,6 +17,9 @@ module Data.GI.CodeGen.Util
   , utf8WriteFile
 
   , splitOn
+
+  , replaceNth
+  , mapNth
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
@@ -91,3 +94,15 @@ utf8ReadFile fname = do
 -- | Write the given `Text` into an UTF-8 encoded file.
 utf8WriteFile :: FilePath -> T.Text -> IO ()
 utf8WriteFile fname text = B.writeFile fname (TE.encodeUtf8 text)
+
+replaceNth :: Int -> a -> [a] -> [a]
+replaceNth _ _ [] = []
+replaceNth n newVal (x:xs)
+  | n == 0 = newVal:xs
+  | otherwise = x:replaceNth (n-1) newVal xs
+
+mapNth :: Int -> (a -> a) -> [a] -> [a]
+mapNth _ _ [] = []
+mapNth n fn (x:xs)
+  | n == 0 = fn x:xs
+  | otherwise = x:mapNth (n-1) fn xs

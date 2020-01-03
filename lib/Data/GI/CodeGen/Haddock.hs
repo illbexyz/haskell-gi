@@ -35,6 +35,7 @@ import Data.GI.CodeGen.GtkDoc (GtkDoc(..), Token(..), CRef(..), Language(..),
                                Link(..), ListItem(..), parseGtkDoc)
 import Data.GI.CodeGen.Overrides (onlineDocsMap)
 import Data.GI.CodeGen.SymbolNaming (lowerSymbol, signalHaskellName)
+import Data.GI.CodeGen.Util (mapNth)
 
 -- | Where is the documentation located with respect to the relevant
 -- symbol, useful for determining whether we want to start with @|@ or @^@.
@@ -237,14 +238,14 @@ writeDocumentation pos doc = do
 -- | Like `writeDocumentation`, but allows us to pass explicitly the
 -- Haddock comment to write.
 writeHaddock :: RelativeDocPosition -> Text -> CodeGen ()
-writeHaddock pos haddock =
-  let marker = case pos of
-        DocBeforeSymbol -> "|"
-        DocAfterSymbol -> "^"
-      lines = case T.lines haddock of
-        [] -> []
-        (first:rest) -> ("(* " <> marker <> " " <> first <> " *)") : map (\x -> "(* " <> x <> " *)") rest
+writeHaddock _pos haddock =
+  let lines = case T.lines haddock of
+                []           -> []
+                first:[]     -> ["(** " <> first <> " *)"]
+                (first:rest) -> "(** " <> first : (closeComments . addIndent) rest
   in mapM_ line lines
+  where addIndent = map ("    " <>)
+        closeComments rest = mapNth (length rest - 1) (<> " *)") rest
 
 -- | Write the documentation for the given argument.
 writeArgDocumentation :: Arg -> CodeGen ()
