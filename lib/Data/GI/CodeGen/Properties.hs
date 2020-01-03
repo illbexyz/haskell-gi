@@ -383,7 +383,7 @@ infoType owner prop =
 
 genOneProperty :: Name -> Property -> ExcCodeGen ()
 genOneProperty owner prop = do
-  traceM $ "Prop: " <> show prop
+  -- traceM $ "Prop: " <> show prop
   let name = upperName owner
       cName = (hyphensToCamelCase . propName) prop
       docSection = NamedSubsection PropertySection (lcFirst cName)
@@ -518,24 +518,50 @@ genPlaceholderProperty owner prop = do
     line $ "attrClear = undefined"
     line $ "attrTransfer = undefined"
 
+genMakeParams :: [Property] -> CodeGen ()
+genMakeParams props = do
+  let constructors = filter isConstructor props
+      constructorNames = map propName constructors
+      underlinedConstrNames = map hyphensToUnderscores constructorNames
+      optionalArgs = "?" <> T.intercalate " ?" underlinedConstrNames
+  line $ "let make_params ~cont pl " <> optionalArgs <> " ="
+  indent $ do
+    let numConstructors = length underlinedConstrNames
+        firstConstrs = take (numConstructors - 1) underlinedConstrNames
+        lastConstr = last underlinedConstrNames
+    line "let pl = ("
+    indent $ do
+      let mayCons constrName = "may_cons P." <> constrName <> " " <> constrName
+      forM_ firstConstrs $ \cName ->
+        line $ mayCons cName <> " ("
+      line $ mayCons lastConstr <> "pl" <> T.pack (replicate numConstructors ')') <> " in"
+    line "cont pl"
+  where isConstructor prop =
+            PropertyConstructOnly `elem` propFlags prop
+            || PropertyConstruct `elem` propFlags prop
+
 genProperties :: Name -> [Property] -> [Text] -> CodeGen ()
 genProperties n ownedProps _allProps = do
-  let name = upperName n
+  line "module P = struct"
+  indent $ do
+    let name = upperName n
 
-  forM_ ownedProps $ \prop ->
-      handleCGExc (\err -> do
-                     line $ "-- XXX Generation of property \""
-                              <> propName prop <> "\" of object \""
-                              <> name <> "\" failed: " <> describeCGError err
-                     cppIf CPPOverloading (genPlaceholderProperty n prop))
-                  (genOneProperty n prop)
+    forM_ ownedProps $ \prop ->
+        handleCGExc (\err -> do
+                      line $ "-- XXX Generation of property \""
+                                <> propName prop <> "\" of object \""
+                                <> name <> "\" failed: " <> describeCGError err
+                      cppIf CPPOverloading (genPlaceholderProperty n prop))
+                    (genOneProperty n prop)
 
-  -- cppIf CPPOverloading $ do
-  --   let propListType = name <> "AttributeList"
-  --   line $ "instance O.HasAttributeList " <> name
-  --   line $ "type instance O.AttributeList " <> name <> " = " <> propListType
-  --   line $ "type " <> propListType <> " = ('[ "
-  --            <> T.intercalate ", " allProps <> "] :: [(Symbol, *)])"
+    -- cppIf CPPOverloading $ do
+    --   let propListType = name <> "AttributeList"
+    --   line $ "instance O.HasAttributeList " <> name
+    --   line $ "type instance O.AttributeList " <> name <> " = " <> propListType
+    --   line $ "type " <> propListType <> " = ('[ "
+    --            <> T.intercalate ", " allProps <> "] :: [(Symbol, *)])"
+  line "end"
+  genMakeParams ownedProps
 
 -- | Generate gtk2hs compatible attribute labels (to ease
 -- porting). These are namespaced labels, for examples

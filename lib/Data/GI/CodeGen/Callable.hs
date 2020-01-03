@@ -71,9 +71,9 @@ hOutType callable outArgs = do
 -- of the corresponding Haskell identifier.
 mkForeignImport :: Name -> Text -> Callable -> CodeGen Text
 mkForeignImport mn cSymbol callable = do
-    traceShowM mn
-    traceShowM callable
-    traceM ""
+    -- traceShowM mn
+    -- traceShowM callable
+    -- traceM ""
     line first
     indent $ do
         mapM_ (\a -> line =<< fArgStr a) (args callable)

@@ -381,7 +381,11 @@ genObject n o =
       line "module Object = GtkObject"
       blank
       line "open Gtk"
-      blank
+
+      group $ do
+        line "let may_cons = Property.may_cons"
+        line "let may_cons_opt = Property.may_cons_opt"
+
       line "module S = struct"
       indent $ line $ "open " <> nspace <> "Signal"
       indent $ do
@@ -391,13 +395,8 @@ genObject n o =
             <> "\"" <> nspace <> objectName <> "\" pl"
       line "end"
 
-      blank
+      group $ genObjectProperties n o
 
-      line "module P = struct"
-      indent $ genObjectProperties n o
-      line "end"
-
-      blank
       -- cppIf CPPOverloading $
       --     genNamespacedPropLabels n (objProperties o) (objMethods o)
       -- cppIf CPPOverloading $
