@@ -39,7 +39,7 @@ import Data.GI.CodeGen.Struct (genStructOrUnionFields, extractCallbacksInStruct,
                   genWrappedPtr)
 import Data.GI.CodeGen.SymbolNaming (upperName, classConstraint, noName,
                                      submoduleLocation, lowerName, qualifiedAPI,
-                                     camelCaseToSnakeCase)
+                                     camelCaseToSnakeCase, hyphensToUnderscores)
 import Data.GI.CodeGen.Type
 import Data.GI.CodeGen.Util (tshow, lcFirst)
 import Debug.Trace
@@ -343,6 +343,14 @@ genGObjectCasts n cn_ parents = do
         classDoc name' = "Type class for types which can be safely cast to `"
                          <> name' <> "`, for instance with `to" <> name' <> "`."
 
+isSetterOrGetter :: Object -> Method -> Bool
+isSetterOrGetter o m =
+  let props = objProperties o in
+  let propNames = map (hyphensToUnderscores . propName) props in
+  let mName = name $ methodName m in
+  ("get" `T.isPrefixOf` mName || "set" `T.isPrefixOf` mName)
+    && any (`T.isSuffixOf` mName) propNames 
+
 -- | Wrap a given Object. We enforce that every Object that we wrap is a
 -- GObject. This is the case for everything except the ParamSpec* set
 -- of objects, we deal with these separately.
@@ -403,7 +411,10 @@ genObject n o =
       --     genObjectSignals n o
 
       -- Methods
-      forM_ (objMethods o) $ \f -> do
+      let methods = objMethods o
+      let methods' = filter (not . isSetterOrGetter o) methods
+
+      forM_ methods' $ \f -> do
         let mn = methodName f
         handleCGExc (\e -> commentLine ("XXX Could not generate method "
                                 <> name' <> "::" <> name mn <> "\n"
