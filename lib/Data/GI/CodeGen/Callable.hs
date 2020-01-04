@@ -17,6 +17,7 @@ module Data.GI.CodeGen.Callable
 
     , wrapMaybe
     , inArgInterfaces
+    , genMlMacro
     ) where
 
 import Control.Monad (forM, forM_, when, void)
@@ -99,6 +100,15 @@ mkForeignImport mn cSymbol callable = do
     last = typeShow <$> case returnType callable of
                                  Nothing -> return $ con0 "unit"
                                  Just r  -> haskellType r
+
+genMlMacro :: Text -> Callable -> ExcCodeGen ()
+genMlMacro cSymbol callable = do
+  let nArgs = T.pack $ show $ length $ args callable
+  let macroName = "ML_" <> nArgs <> " ("
+  retTypeName <- cToOCamlValue $ returnType callable
+  argsTypes   <- mapM (ocamlValueToC . argType) (args callable)
+  let macroArgs = T.intercalate ", " (cSymbol : argsTypes ++ [retTypeName])
+  cline $ macroName <> macroArgs <> ")"
 
 -- | Make a wrapper for foreign `FunPtr`s of the given type. Return
 -- the name of the resulting dynamic Haskell wrapper.
@@ -940,7 +950,7 @@ genCallableDebugInfo callable =
 genCCallableWrapper :: Name -> Text -> Callable -> ExcCodeGen ()
 genCCallableWrapper mn cSymbol callable = do
   
-  genCallableDebugInfo callable
+  -- genCallableDebugInfo callable
 
   let callable' = fixupCallerAllocates callable
 
@@ -948,6 +958,7 @@ genCCallableWrapper mn cSymbol callable = do
 
   blank
 
+  genMlMacro cSymbol callable'
   -- deprecatedPragma (lowerName mn) (callableDeprecated callable)
   -- writeDocumentation DocBeforeSymbol (callableDocumentation callable)
   -- void (genHaskellWrapper mn (KnownForeignSymbol hSymbol) callable'
@@ -967,7 +978,7 @@ forgetClosures c = c {args = map forgetClosure (args c)}
 genDynamicCallableWrapper :: Name -> Text -> Callable ->
                              ExcCodeGen Text
 genDynamicCallableWrapper n typeSynonym callable = do
-  genCallableDebugInfo callable
+  -- genCallableDebugInfo callable
 
   let callable' = forgetClosures (fixupCallerAllocates callable)
 
