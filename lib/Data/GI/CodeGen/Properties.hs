@@ -534,7 +534,7 @@ genMakeParams props = do
       let mayCons constrName = "may_cons P." <> constrName <> " " <> constrName
       forM_ firstConstrs $ \cName ->
         line $ mayCons cName <> " ("
-      line $ mayCons lastConstr <> "pl" <> T.pack (replicate numConstructors ')') <> " in"
+      line $ mayCons lastConstr <> " pl" <> T.pack (replicate numConstructors ')') <> " in"
     line "cont pl"
   where isConstructor prop =
             PropertyConstructOnly `elem` propFlags prop
