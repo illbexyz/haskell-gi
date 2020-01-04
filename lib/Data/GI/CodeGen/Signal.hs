@@ -93,7 +93,7 @@ ocamlMarshaller args sigName onName = case args of
   args' -> do 
     let sigName' = "\"" <> ucFirst onName <> "::" <> sigName <> "\""
         len = length args'
-        marsh = "fun f -> marshal_" <> T.pack (show len)
+        marsh = "fun f -> marshal" <> T.pack (show len)
     argTypes <- argsTypeRep args'
     return $ T.intercalate " " (marsh : argTypes ++ [sigName', "f"])
 
