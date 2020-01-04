@@ -36,6 +36,8 @@ module Data.GI.CodeGen.Conversions
     , literal
     , Constructor(..)
     , typeToOCamlConverter
+    , ocamlValueToC
+    , cToOCamlValue
     ) where
 
 #if !MIN_VERSION_base(4,8,0)
@@ -914,7 +916,7 @@ haskellType t@(TInterface n) = do
   return $ case api of
              (APIFlags _) -> "[]" `con` [tname `con` []]
              APIEnum _enum -> (T.toTitle (namespace n) <> "Enums." <> ocamlName) `con` []
-             _ -> poly $ T.toLower tname `con` []
+             _ -> obj $ poly $ T.toLower tname `con` []
 
 -- | Whether the callable has closure arguments (i.e. "user_data"
 -- style arguments).
@@ -1184,7 +1186,92 @@ typeToOCamlConverter (TGHash _t1 _t2) = undefined
 typeToOCamlConverter (TGClosure _m) = undefined
 typeToOCamlConverter (TInterface n) = do
   let ocamlName = camelCaseToSnakeCase $ name n
-  api <- findAPIByName $ n
+  api <- findAPIByName n
   return $ case api of
     APIEnum _enum -> T.toTitle (namespace n) <> "Enums." <> ocamlName <> "_conv"
     _            -> "(gobject : " <> namespace n <> "." <> ocamlName <> " obj data_conv)"
+
+ocamlValueToC :: Type -> ExcCodeGen Text
+ocamlValueToC (TBasicType t) =
+  return $ case t of
+    TBoolean  -> "Bool_val"
+    TInt      -> "Int_val"
+    TUInt     -> "uint"
+    TLong     -> "long"
+    TULong    -> "ulong"
+    TInt8     -> "int8"
+    TUInt8    -> "uint8"
+    TInt16    -> "int16"
+    TUInt16   -> "uint16"
+    TInt32    -> "int32"
+    TUInt32   -> "uint32"
+    TInt64    -> "int64"
+    TUInt64   -> "uint64"
+    TFloat    -> "Float_val"
+    TDouble   -> "Double_val"
+    TUniChar  -> "char"
+    TGType    -> "gobject"
+    TUTF8     -> "String_val"
+    TFileName -> "String_val"
+    TPtr      -> "pointer"
+    TIntPtr   -> "pointer"
+    TUIntPtr  -> "pointer"
+ocamlValueToC (TError) = notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+ocamlValueToC (TVariant) = notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+ocamlValueToC (TParamSpec) = notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+ocamlValueToC (TCArray _b _i1 _i2 _t) = notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+ocamlValueToC (TGArray _t) = notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+ocamlValueToC (TPtrArray _t) = notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+ocamlValueToC (TByteArray) = notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+ocamlValueToC (TGList _t) = notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+ocamlValueToC (TGSList _t) = notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+ocamlValueToC (TGHash _t1 _t2) = notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+ocamlValueToC (TGClosure _m) = notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+ocamlValueToC (TInterface n) = do
+  api <- findAPIByName n
+  case api of
+    APIEnum _enum -> notImplementedError "This ocamlValueToC conversion isn't implemented yet"
+    _             -> return $ namespace n <> name n <> "_val"
+
+cToOCamlValue :: Maybe Type -> ExcCodeGen Text
+cToOCamlValue Nothing = return "Unit"
+cToOCamlValue (Just (TBasicType t)) =
+  return $ case t of
+    TBoolean  -> "Val_bool"
+    TInt      -> "Val_int"
+    TUInt     -> "uint"
+    TLong     -> "Val_long"
+    TULong    -> "ulong"
+    TInt8     -> "int8"
+    TUInt8    -> "uint8"
+    TInt16    -> "int16"
+    TUInt16   -> "uint16"
+    TInt32    -> "int32"
+    TUInt32   -> "uint32"
+    TInt64    -> "int64"
+    TUInt64   -> "uint64"
+    TFloat    -> "Float_val"
+    TDouble   -> "Double_val"
+    TUniChar  -> "char"
+    TGType    -> "gobject"
+    TUTF8     -> "String_val"
+    TFileName -> "String_val"
+    TPtr      -> "pointer"
+    TIntPtr   -> "pointer"
+    TUIntPtr  -> "pointer"
+cToOCamlValue (Just (TError)) = notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+cToOCamlValue (Just (TVariant)) = notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+cToOCamlValue (Just (TParamSpec)) = notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+cToOCamlValue (Just (TCArray _b _i1 _i2 _t)) = notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+cToOCamlValue (Just (TGArray _t)) = notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+cToOCamlValue (Just (TPtrArray _t)) = notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+cToOCamlValue (Just (TByteArray)) = notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+cToOCamlValue (Just (TGList _t)) = notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+cToOCamlValue (Just (TGSList _t)) = notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+cToOCamlValue (Just (TGHash _t1 _t2)) = notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+cToOCamlValue (Just (TGClosure _m)) = notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+cToOCamlValue (Just (TInterface n)) = do
+  api <- findAPIByName n
+  case api of
+    APIEnum _enum -> notImplementedError "This cToOCamlValue conversion isn't implemented yet"
+    _             -> return $ "Val_" <> namespace n <> name n
