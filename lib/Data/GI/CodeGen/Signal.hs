@@ -515,22 +515,22 @@ genSignalInfoInstance owner signal = group $ do
 processSignalError :: Signal -> Name -> CGError -> CodeGen ()
 processSignalError signal owner err = do
   let qualifiedSignalName = upperName owner <> "::" <> sigName signal
-      sn = (ucFirst . signalHaskellName . sigName) signal
+      -- sn = (ucFirst . signalHaskellName . sigName) signal
   line $ T.concat ["-- XXX Could not generate signal "
                   , qualifiedSignalName
                   , "\n", "-- Error was : ", describeCGError err]
 
   -- Generate a placeholder SignalInfo instance that raises a type
   -- error when one attempts to use it.
-  cppIf CPPOverloading $ group $ do
-    si <- signalInfoName owner signal
-    bline $ "data " <> si
-    line $ "instance SignalInfo " <> si <> " where"
-    indent $ do
-      line $ "type HaskellCallbackType " <> si <>
-        " = B.Signals.SignalCodeGenError \"" <> qualifiedSignalName <> "\""
-      line $ "connectSignal = undefined"
-    export (NamedSubsection SignalSection $ lcFirst sn) si
+  -- cppIf CPPOverloading $ group $ do
+  --   si <- signalInfoName owner signal
+  --   bline $ "data " <> si
+  --   line $ "instance SignalInfo " <> si <> " where"
+  --   indent $ do
+  --     line $ "type HaskellCallbackType " <> si <>
+  --       " = B.Signals.SignalCodeGenError \"" <> qualifiedSignalName <> "\""
+  --     line $ "connectSignal = undefined"
+  --   export (NamedSubsection SignalSection $ lcFirst sn) si
 
 -- | Generate a wrapper for a signal.
 genSignal :: Signal -> Name -> CodeGen ()
