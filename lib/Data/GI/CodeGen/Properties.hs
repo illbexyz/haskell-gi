@@ -243,44 +243,17 @@ genPropertyGetter getter n docSection prop = group $ do
   export docSection getter
 
 
-genPropertyOCaml :: Text -> Name -> HaddockSection -> Property -> ExcCodeGen ()
-genPropertyOCaml getter n docSection prop = group $ do
-  isNullable <- typeIsNullable (propType prop)
-  let isMaybe = isNullable && propReadNullable prop /= Just False
-  constructorType <- isoHaskellType (propType prop)
-  tStr <- propTypeStr $ propType prop
-  cls <- classConstraint n
-  let constraints = "(MonadIO m, " <> cls <> " o)"
-      outType = if isMaybe
-                then maybeT constructorType
-                else constructorType
-      returnType = typeShow $ "m" `con` [outType]
-      getProp = if isNullable && not isMaybe
-                then "checkUnexpectedNothing \"" <> getter
-                         <> "\" $ B.Properties.getObjectProperty" <> tStr
-                else "B.Properties.getObjectProperty" <> tStr
-  -- Some property getters require in addition a constructor, which
-  -- will convert the foreign value to the wrapped Haskell one.
-  constructorArg <-
-    if tStr `elem` ["Object", "Boxed"]
-    then return $ " " <> typeShow constructorType
-    else (if tStr == "Callback"
-          then do
-             callbackType <- haskellType (propType prop)
-             return $ " " <> callbackDynamicWrapper (typeShow callbackType)
-          else return "")
-
+genPropertyOCaml :: Name -> Property -> ExcCodeGen ()
+genPropertyOCaml classe prop = group $ do
+  let pName = propName prop
+      uScoresName = hyphensToUnderscores pName
+      classType = typeShow $ poly $ con0 $ lowerName classe
   -- TODO: uncomment next line
   -- writeHaddock DocBeforeSymbol (getterDoc n prop) 
-  -- line $ getter <> " :: " <> constraints <>
-  --               " => o -> " <> returnType
-  -- line $ getter <> " obj = liftIO $ " <> getProp
-  --          <> " obj \"" <> propName prop <> "\"" <> constructorArg
-  -- export docSection getter
   ocamlConverter <- typeToOCamlConverter $ propType prop
-  line $ "let " <> getter <> " : " <> "(" <> "[>`" <> lowerName n <> "],_) property ="
+  line $ "let " <> uScoresName <> " : " <> "(" <> classType <> ",_) property ="
   indent $ line $ "{"
-    <> "name=\"" <> underscoresToHyphens getter <> "\"; "
+    <> "name=\"" <> pName <> "\"; "
     <> "conv=" <> ocamlConverter
     <> "}"
 
@@ -427,7 +400,8 @@ genOneProperty owner prop = do
                                 propWriteNullable prop /= Just False)
            "clear" owner cName
 
-  when (getter /= "undefined") $ genPropertyOCaml getter owner docSection prop
+  -- when (getter /= "undefined") $ genPropertyOCaml getter owner prop
+  genPropertyOCaml owner prop
   -- when (setter /= "undefined") $ genPropertySetter setter owner docSection prop
   -- when (constructor /= "undefined") $
   --      genPropertyConstructor constructor owner docSection prop
