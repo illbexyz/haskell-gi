@@ -398,13 +398,19 @@ genObject n o =
       indent $ line $ "open " <> nspace <> "Signal"
       indent $ do
         forM_ (objSignals o) $ \s -> genSignal s n
-        line $ "let create pl : "
-            <> nspace <> "." <> T.toLower objectName <> " obj = Object.make "
-            <> "\"" <> nspace <> objectName <> "\" pl"
       line "end"
 
       group $ genObjectProperties n o
 
+      group $
+        line $ "let cast w : "
+          <> nspace <> "." <> T.toLower objectName <> " obj = try_cast w "
+          <> "\"" <> nspace <> objectName <> "\""
+
+      group $
+        line $ "let create pl : "
+          <> nspace <> "." <> T.toLower objectName <> " obj = Object.make "
+          <> "\"" <> nspace <> objectName <> "\" pl"
       -- cppIf CPPOverloading $
       --     genNamespacedPropLabels n (objProperties o) (objMethods o)
       -- cppIf CPPOverloading $
