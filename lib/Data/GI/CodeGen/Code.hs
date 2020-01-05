@@ -34,6 +34,7 @@ module Data.GI.CodeGen.Code
     , bline
     , line
     , cline
+    , gline
     , commentLine
     , blank
     , group
@@ -98,7 +99,7 @@ import Data.GI.CodeGen.Config (Config(..))
 import {-# SOURCE #-} Data.GI.CodeGen.CtoHaskellMap (cToHaskellMap,
                                                      Hyperlink)
 import Data.GI.CodeGen.GtkDoc (CRef)
-import Data.GI.CodeGen.ModulePath (ModulePath(..), dotModulePath, (/.))
+import Data.GI.CodeGen.ModulePath (ModulePath(..), dotModulePath, (/.), addNamePrefix)
 import Data.GI.CodeGen.Type (Type(..))
 import Data.GI.CodeGen.Util (tshow, terror, padTo, utf8WriteFile)
 import Data.GI.CodeGen.ProjectInfo (authors, license, maintainers)
@@ -177,6 +178,7 @@ data ModuleInfo = ModuleInfo {
       modulePath :: ModulePath -- ^ Full module name: ["Gtk", "Label"].
     , moduleCode :: Code       -- ^ Generated code for the module.
     , bootCode   :: Code       -- ^ Interfaces going into the .hs-boot file.
+    , gCode      :: Code       -- ^ OOP OCaml code
     , cCode      :: Code       -- ^ C stubs' code
     , submodules :: M.Map Text ModuleInfo -- ^ Indexed by the relative
                                           -- module name.
@@ -214,6 +216,7 @@ emptyModule m = ModuleInfo { modulePath = m
                            , moduleCode = emptyCode
                            , bootCode = emptyCode
                            , cCode = emptyCode
+                           , gCode = emptyCode
                            , submodules = M.empty
                            , moduleDeps = Set.empty
                            , moduleExports = Seq.empty
@@ -288,7 +291,7 @@ runCodeGen cg cfg state =
 -- result to the original structure later.
 cleanInfo :: ModuleInfo -> ModuleInfo
 cleanInfo info = info { moduleCode = emptyCode, submodules = M.empty,
-                        cCode = emptyCode,
+                        cCode = emptyCode, gCode = emptyCode,
                         bootCode = emptyCode, moduleExports = Seq.empty,
                         qualifiedImports = Set.empty,
                         sectionDocs = M.empty, moduleMinBase = Base47 }
@@ -338,6 +341,7 @@ mergeInfoState oldState newState =
         newGHCOpts = Set.union (moduleGHCOpts oldState) (moduleGHCOpts newState)
         newFlags = Set.union (moduleFlags oldState) (moduleFlags newState)
         newCCode = cCode oldState <> cCode newState
+        newGCode = gCode oldState <> gCode newState
         newBoot = bootCode oldState <> bootCode newState
         newDocs = sectionDocs oldState <> sectionDocs newState
         newMinBase = max (moduleMinBase oldState) (moduleMinBase newState)
@@ -345,8 +349,8 @@ mergeInfoState oldState newState =
                  moduleExports = newExports, qualifiedImports = newImports,
                  modulePragmas = newPragmas,
                  moduleGHCOpts = newGHCOpts, moduleFlags = newFlags,
-                 bootCode = newBoot, cCode = newCCode, sectionDocs = newDocs,
-                 moduleMinBase = newMinBase }
+                 bootCode = newBoot, cCode = newCCode, gCode = newGCode,
+                 sectionDocs = newDocs, moduleMinBase = newMinBase }
 
 -- | Merge the infos, including code too.
 mergeInfo :: ModuleInfo -> ModuleInfo -> ModuleInfo
@@ -564,11 +568,6 @@ tellCode :: CodeToken -> CodeGen ()
 tellCode c = modify' (\(cgs, s) -> (cgs, s {moduleCode = moduleCode s <>
                                                          codeSingleton c}))
 
--- | Add some code to the current C stubs generator.
--- tellCCode :: CodeToken -> CodeGen ()
--- tellCCode c = modify' (\(cgs, s) -> (cgs, s {cCode = cCode s <>
---                                                          codeSingleton c}))
-
 -- | Print out a (newline-terminated) line.
 line :: Text -> CodeGen ()
 line = tellCode . Line
@@ -576,6 +575,10 @@ line = tellCode . Line
 -- | Print out a (newline-terminated) line in the C stubs' file
 cline :: Text -> CodeGen ()
 cline l = cBoot (line l)
+
+-- | Print out a (newline-terminated) line in the C stubs' file
+gline :: Text -> CodeGen ()
+gline l = gBoot (line l)
 
 -- | Print out an OCaml's comment line
 commentLine :: Text -> CodeGen ()
@@ -634,6 +637,13 @@ cBoot :: BaseCodeGen e a -> BaseCodeGen e a
 cBoot cg = do
   (x, code) <- recurseCG cg
   modify' (\(cgs, s) -> (cgs, s {cCode = cCode s <> code}))
+  return x
+
+-- | Write the given code into the .c file for the current module.
+gBoot :: BaseCodeGen e a -> BaseCodeGen e a
+gBoot cg = do
+  (x, code) <- recurseCG cg
+  modify' (\(cgs, s) -> (cgs, s {gCode = gCode s <> code}))
   return x
 
 -- | Write the given code into the .hs-boot file for the current module.
@@ -1004,6 +1014,11 @@ writeModuleInfo verbose dirPrefix minfo = do
     let cStubsFile = modulePathToFilePath dirPrefix (modulePath minfo) ".c"
     utf8WriteFile cStubsFile (T.unlines [cOCamlModuleImports, genCStubs minfo])
 
+  unless (isCodeEmpty $ gCode minfo) $ do
+    let gFileModulePath = addNamePrefix "g" (modulePath minfo)
+    let gModuleFile = modulePathToFilePath dirPrefix gFileModulePath ".ml"
+    utf8WriteFile gModuleFile (T.unlines [genGModule minfo])
+
 -- | Generate the .hs-boot file for the given module.
 genHsBoot :: ModuleInfo -> Text
 genHsBoot minfo =
@@ -1015,6 +1030,10 @@ genHsBoot minfo =
 -- | Generate the .hs-boot file for the given module.
 genCStubs :: ModuleInfo -> Text
 genCStubs minfo = codeToText (cCode minfo)
+
+-- | Generate the .hs-boot file for the given module.
+genGModule :: ModuleInfo -> Text
+genGModule minfo = codeToText (gCode minfo)
 
 -- | Construct the filename corresponding to the given module.
 modulePathToFilePath :: Maybe FilePath -> ModulePath -> FilePath -> FilePath

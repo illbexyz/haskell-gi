@@ -384,6 +384,10 @@ genObject n o =
       --     fullObjectMethodList n o >>= genMethodList n
       let nspace = namespace n
       let objectName = name n
+
+      gline $ "class " <> objectName <> " obj = object"
+      gline $ "end"
+
       line "open Gobject"
       line "open Data"
       line "module Object = GtkObject"

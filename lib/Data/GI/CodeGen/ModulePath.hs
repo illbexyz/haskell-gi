@@ -5,6 +5,7 @@ module Data.GI.CodeGen.ModulePath
   , toModulePath
   , (/.)
   , dotModulePath
+  , addNamePrefix
   ) where
 
 #if !MIN_VERSION_base(4,13,0)
@@ -15,7 +16,7 @@ import qualified Data.Text as T
 import qualified Data.Semigroup as Sem
 import Data.Text (Text)
 
-import Data.GI.CodeGen.Util (ucFirst)
+import Data.GI.CodeGen.Util (ucFirst, mapNth)
 
 -- | A path to a module.
 newtype ModulePath = ModulePath { modulePathToList :: [Text] }
@@ -60,3 +61,8 @@ dotModulePath (ModulePath mp) = T.intercalate "." mp
 -- "Foo.Bar"
 (/.) :: ModulePath -> Text -> ModulePath
 (/.) mp p = mp <> toModulePath p
+
+addNamePrefix :: Text -> ModulePath -> ModulePath
+addNamePrefix prefix mp = 
+  let pathList = modulePathToList mp in
+  ModulePath $ mapNth (length pathList - 1) (prefix <>) pathList
