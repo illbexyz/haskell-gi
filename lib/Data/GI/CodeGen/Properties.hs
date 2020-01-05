@@ -180,23 +180,27 @@ setterDoc n prop = T.unlines [
     <> " 'Data.GI.Base.Attributes.:=' value ]"
   , "@"]
 
-genPropertySetter :: Text -> Name -> HaddockSection -> Property -> CodeGen ()
-genPropertySetter setter n docSection prop = group $ do
-  (constraints, t) <- attrType prop
-  isNullable <- typeIsNullable (propType prop)
-  isCallback <- typeIsCallback (propType prop)
-  cls <- classConstraint n
-  let constraints' = "MonadIO m":(cls <> " o"):constraints
-  tStr <- propTypeStr $ propType prop
-  writeHaddock DocBeforeSymbol (setterDoc n prop)
-  line $ setter <> " :: (" <> T.intercalate ", " constraints'
-           <> ") => o -> " <> t <> " -> m ()"
-  line $ setter <> " obj val = liftIO $ B.Properties.setObjectProperty" <> tStr
-           <> " obj \"" <> propName prop
-           <> if isNullable && (not isCallback)
-              then "\" (Just val)"
-              else "\" val"
-  export docSection setter
+-- genPropertySetter :: Text -> Name -> HaddockSection -> Property -> CodeGen ()
+-- genPropertySetter setter n docSection prop = group $ do
+--   (constraints, t) <- attrType prop
+--   isNullable <- typeIsNullable (propType prop)
+--   isCallback <- typeIsCallback (propType prop)
+--   cls <- classConstraint n
+--   let constraints' = "MonadIO m":(cls <> " o"):constraints
+--   tStr <- propTypeStr $ propType prop
+--   writeHaddock DocBeforeSymbol (setterDoc n prop)
+--   line $ setter <> " :: (" <> T.intercalate ", " constraints'
+--            <> ") => o -> " <> t <> " -> m ()"
+--   line $ setter <> " obj val = liftIO $ B.Properties.setObjectProperty" <> tStr
+--            <> " obj \"" <> propName prop
+--            <> if isNullable && (not isCallback)
+--               then "\" (Just val)"
+--               else "\" val"
+--   export docSection setter
+
+genPropertySetter :: Text -> Name -> Property -> CodeGen ()
+genPropertySetter setter classe _prop = group $
+  gline $ "method set_" <> setter <> " = set " <> name classe <> ".P." <> setter <> " obj"
 
 -- | Generate documentation for the given getter.
 getterDoc :: Name -> Property -> Text
@@ -208,40 +212,43 @@ getterDoc n prop = T.unlines [
   , "'Data.GI.Base.Attributes.get' " <> lowerName n <> " #" <> hPropName prop
   , "@"]
 
-genPropertyGetter :: Text -> Name -> HaddockSection -> Property -> CodeGen ()
-genPropertyGetter getter n docSection prop = group $ do
-  isNullable <- typeIsNullable (propType prop)
-  let isMaybe = isNullable && propReadNullable prop /= Just False
-  constructorType <- isoHaskellType (propType prop)
-  tStr <- propTypeStr $ propType prop
-  cls <- classConstraint n
-  let constraints = "(MonadIO m, " <> cls <> " o)"
-      outType = if isMaybe
-                then maybeT constructorType
-                else constructorType
-      returnType = typeShow $ "m" `con` [outType]
-      getProp = if isNullable && not isMaybe
-                then "checkUnexpectedNothing \"" <> getter
-                         <> "\" $ B.Properties.getObjectProperty" <> tStr
-                else "B.Properties.getObjectProperty" <> tStr
-  -- Some property getters require in addition a constructor, which
-  -- will convert the foreign value to the wrapped Haskell one.
-  constructorArg <-
-    if tStr `elem` ["Object", "Boxed"]
-    then return $ " " <> typeShow constructorType
-    else (if tStr == "Callback"
-          then do
-             callbackType <- haskellType (propType prop)
-             return $ " " <> callbackDynamicWrapper (typeShow callbackType)
-          else return "")
+-- genPropertyGetter :: Text -> Name -> HaddockSection -> Property -> CodeGen ()
+-- genPropertyGetter getter n docSection prop = group $ do
+--   isNullable <- typeIsNullable (propType prop)
+--   let isMaybe = isNullable && propReadNullable prop /= Just False
+--   constructorType <- isoHaskellType (propType prop)
+--   tStr <- propTypeStr $ propType prop
+--   cls <- classConstraint n
+--   let constraints = "(MonadIO m, " <> cls <> " o)"
+--       outType = if isMaybe
+--                 then maybeT constructorType
+--                 else constructorType
+--       returnType = typeShow $ "m" `con` [outType]
+--       getProp = if isNullable && not isMaybe
+--                 then "checkUnexpectedNothing \"" <> getter
+--                          <> "\" $ B.Properties.getObjectProperty" <> tStr
+--                 else "B.Properties.getObjectProperty" <> tStr
+--   -- Some property getters require in addition a constructor, which
+--   -- will convert the foreign value to the wrapped Haskell one.
+--   constructorArg <-
+--     if tStr `elem` ["Object", "Boxed"]
+--     then return $ " " <> typeShow constructorType
+--     else (if tStr == "Callback"
+--           then do
+--              callbackType <- haskellType (propType prop)
+--              return $ " " <> callbackDynamicWrapper (typeShow callbackType)
+--           else return "")
 
-  writeHaddock DocBeforeSymbol (getterDoc n prop)
-  line $ getter <> " :: " <> constraints <>
-                " => o -> " <> returnType
-  line $ getter <> " obj = liftIO $ " <> getProp
-           <> " obj \"" <> propName prop <> "\"" <> constructorArg
-  export docSection getter
+--   writeHaddock DocBeforeSymbol (getterDoc n prop)
+--   line $ getter <> " :: " <> constraints <>
+--                 " => o -> " <> returnType
+--   line $ getter <> " obj = liftIO $ " <> getProp
+--            <> " obj \"" <> propName prop <> "\"" <> constructorArg
+--   export docSection getter
 
+genPropertyGetter :: Text -> Name -> Property -> CodeGen ()
+genPropertyGetter getter classe _prop =
+  gline $ "method " <> getter <> " = get " <> name classe <> ".P." <> getter <> " obj"
 
 genPropertyOCaml :: Name -> Property -> ExcCodeGen ()
 genPropertyOCaml classe prop = group $ do
@@ -400,9 +407,9 @@ genOneProperty owner prop = do
                                 propWriteNullable prop /= Just False)
            "clear" owner cName
 
-  -- when (getter /= "undefined") $ genPropertyOCaml getter owner prop
   genPropertyOCaml owner prop
-  -- when (setter /= "undefined") $ genPropertySetter setter owner docSection prop
+  when (getter /= "undefined") $ genPropertyGetter getter owner prop
+  when (setter /= "undefined") $ genPropertySetter setter owner prop
   -- when (constructor /= "undefined") $
   --      genPropertyConstructor constructor owner docSection prop
   -- when (clear /= "undefined") $ genPropertyClear clear owner docSection prop

@@ -396,7 +396,6 @@ genObject n o =
       -- TODO: Probably we must export somewhere the full type
       --       (ex: [bin | `button]) and use this type
       gindent $ gline $ "val obj : " <> "[>`" <> lcFirst objectName <> "] obj = obj"
-      gline $ "end"
 
       line "open Gobject"
       line "open Data"
@@ -442,7 +441,7 @@ genObject n o =
                     (genMethod n f)
                     -- >> (cppIf CPPOverloading $
                     --         genUnsupportedMethodInfo n f))
-
+      gline "end"
                     
 
 genInterface :: Name -> Interface -> CodeGen ()
