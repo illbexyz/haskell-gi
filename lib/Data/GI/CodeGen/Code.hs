@@ -30,6 +30,7 @@ module Data.GI.CodeGen.Code
     , missingInfoError
 
     , indent
+    , gindent
     , increaseIndent
     , bline
     , line
@@ -37,7 +38,9 @@ module Data.GI.CodeGen.Code
     , gline
     , commentLine
     , blank
+    , gblank
     , group
+    , ggroup
     , cppIf
     , CPPGuard(..)
     , hsBoot
@@ -568,6 +571,11 @@ tellCode :: CodeToken -> CodeGen ()
 tellCode c = modify' (\(cgs, s) -> (cgs, s {moduleCode = moduleCode s <>
                                                          codeSingleton c}))
 
+-- | Add some code to the current generator.
+tellGCode :: CodeToken -> CodeGen ()
+tellGCode c = modify' (\(cgs, s) -> (cgs, s {gCode = gCode s <>
+                                                     codeSingleton c}))
+
 -- | Print out a (newline-terminated) line.
 line :: Text -> CodeGen ()
 line = tellCode . Line
@@ -578,7 +586,7 @@ cline l = cBoot (line l)
 
 -- | Print out a (newline-terminated) line in the C stubs' file
 gline :: Text -> CodeGen ()
-gline l = gBoot (line l)
+gline = tellGCode . Line
 
 -- | Print out an OCaml's comment line
 commentLine :: Text -> CodeGen ()
@@ -593,25 +601,42 @@ bline l = hsBoot (line l) >> line l
 blank :: CodeGen ()
 blank = line ""
 
+gblank :: CodeGen ()
+gblank = gline ""
+
+-- | Increase the indent level for code generation.
+indent' :: (CodeToken -> CodeGen ()) -> BaseCodeGen e a -> BaseCodeGen e a
+indent' codeTeller cg = do
+  (x, code) <- recurseCG cg
+  codeTeller (Indent code)
+  return x
+
 -- | Increase the indent level for code generation.
 indent :: BaseCodeGen e a -> BaseCodeGen e a
-indent cg = do
-  (x, code) <- recurseCG cg
-  tellCode (Indent code)
-  return x
+indent = indent' tellCode 
+
+gindent :: BaseCodeGen e a -> BaseCodeGen e a
+gindent = indent' tellGCode
 
 -- | Increase the indentation level for the rest of the lines in the
 -- current group.
 increaseIndent :: CodeGen ()
 increaseIndent = tellCode IncreaseIndent
 
+group' :: (CodeToken -> CodeGen ()) -> CodeGen () -> BaseCodeGen e a -> BaseCodeGen e a
+group' codeTeller blanker cg = do
+  (x, code) <- recurseCG cg
+  codeTeller (Group code)
+  blanker
+  return x
+
 -- | Group a set of related code.
 group :: BaseCodeGen e a -> BaseCodeGen e a
-group cg = do
-  (x, code) <- recurseCG cg
-  tellCode (Group code)
-  blank
-  return x
+group = group' tellCode blank
+
+-- | Group a set of related code.
+ggroup :: BaseCodeGen e a -> BaseCodeGen e a
+ggroup = group' tellGCode gblank
 
 -- | Guard a block of code with @#if@.
 cppIfBlock :: Text -> BaseCodeGen e a -> BaseCodeGen e a
@@ -637,13 +662,6 @@ cBoot :: BaseCodeGen e a -> BaseCodeGen e a
 cBoot cg = do
   (x, code) <- recurseCG cg
   modify' (\(cgs, s) -> (cgs, s {cCode = cCode s <> code}))
-  return x
-
--- | Write the given code into the .c file for the current module.
-gBoot :: BaseCodeGen e a -> BaseCodeGen e a
-gBoot cg = do
-  (x, code) <- recurseCG cg
-  modify' (\(cgs, s) -> (cgs, s {gCode = gCode s <> code}))
   return x
 
 -- | Write the given code into the .hs-boot file for the current module.
@@ -1031,7 +1049,7 @@ genHsBoot minfo =
 genCStubs :: ModuleInfo -> Text
 genCStubs minfo = codeToText (cCode minfo)
 
--- | Generate the .hs-boot file for the given module.
+-- | Generate the g*.ml file for the given module.
 genGModule :: ModuleInfo -> Text
 genGModule minfo = codeToText (gCode minfo)
 

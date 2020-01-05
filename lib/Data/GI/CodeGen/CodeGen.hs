@@ -385,7 +385,17 @@ genObject n o =
       let nspace = namespace n
       let objectName = name n
 
-      gline $ "class " <> objectName <> " obj = object"
+      gline "open GtkSignal"
+      gline "open Gobject"
+      gline "open Data"
+      gblank
+      gline $ "open " <> objectName
+      gblank
+
+      gline $ "class " <> lcFirst objectName <> " obj = object"
+      -- TODO: Probably we must export somewhere the full type
+      --       (ex: [bin | `button]) and use this type
+      gindent $ gline $ "val obj : " <> "[>`" <> lcFirst objectName <> "] obj = obj"
       gline $ "end"
 
       line "open Gobject"
