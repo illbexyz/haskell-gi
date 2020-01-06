@@ -17,7 +17,7 @@ import Data.Monoid ((<>))
 import Data.Text (Text)
 
 import Data.GI.CodeGen.API
-import Data.GI.CodeGen.Code (findAPIByName, CodeGen, line)
+import Data.GI.CodeGen.Code (findAPIByName, CodeGen, line, commentLine)
 import Data.GI.CodeGen.Util (tshow)
 import Data.GI.CodeGen.Fixups (dropMovedItems)
 
@@ -117,9 +117,9 @@ removeDuplicates verbose inheritables =
               | (p == prop) -> return m -- Duplicated, but isomorphic property
               | otherwise   ->
                 do when verbose $ do
-                     line   "--- XXX Duplicated object with different types:"
-                     line $ "  --- " <> tshow n <> " -> " <> tshow p
-                     line $ "  --- " <> tshow name <> " -> " <> tshow prop
+                     commentLine   "XXX Duplicated object with different types:"
+                     commentLine $ "  " <> tshow n <> " -> " <> tshow p
+                     commentLine $ "  " <> tshow name <> " -> " <> tshow prop
                    -- Tainted
                    return $ M.insert (iName prop) (True, n, p) m
           Nothing -> return $ M.insert (iName prop) (False, name, prop) m

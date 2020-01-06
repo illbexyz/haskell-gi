@@ -79,15 +79,13 @@ genHaskellCallbackPrototype subsec cb htype expose doc = group $ do
           "A convenience synonym for @`Nothing` :: `Maybe` `" <> typeName <>
           "`@."
 
-argsTypeRep :: [Arg] -> CodeGen [Text]
+argsTypeRep :: [Arg] -> ExcCodeGen [Text]
 argsTypeRep = mapM conv
   where conv arg = do
-          -- TODO: Using haskellType isn't correct, we must use a 
-          -- Type to OCaml marshaller function
-          ocamlType <- haskellType $ argType arg 
-          return $ typeShow ocamlType
+          ocamlType <- typeToOCamlConverter $ argType arg 
+          return $ ocamlType
 
-ocamlMarshaller :: [Arg] -> Text -> Text -> CodeGen Text
+ocamlMarshaller :: [Arg] -> Text -> Text -> ExcCodeGen Text
 ocamlMarshaller args sigName onName = case args of
   []    -> return "marshal_unit"
   args' -> do 
@@ -110,16 +108,18 @@ genOCamlCallbackPrototype subsec cb htype classe expose doc = do
         hOutArgs = callableHOutArgs cb
 
     -- export (NamedSubsection SignalSection subsec) name'
-    writeDocumentation DocBeforeSymbol doc
+    -- writeDocumentation DocBeforeSymbol doc
 
     ret <- hOutType cb hOutArgs
     marshaller <- ocamlMarshaller hInArgs subsec classe
 
     line $ "let " <> subsec <> " = {"
         <> "name=\"" <> subsec <> "\"; "
-        <> "classe=`" <> classe <> "; "
+        <> "classe=`" <> T.toLower classe <> "; " -- TODO: use a typerep here
         <> "marshaller=" <> marshaller
         <> "}"
+    
+    gline $ "method connect_" <> subsec <> " = self#connect " <> ucFirst classe <> ".S." <> subsec
 
     -- line $ "type " <> name' <> " ="
     -- indent $ do
@@ -457,9 +457,9 @@ genCallback n (Callback {cbCallable = cb, cbDocumentation = cbDoc }) = do
   else do
     let cb' = fixupCallerAllocates cb
 
-    handleCGExc (\e -> line ("-- XXX Could not generate callback wrapper for "
+    handleCGExc (\e -> line ("(* Could not generate callback wrapper for "
                              <> name' <>
-                             "\n-- Error was : " <> describeCGError e)) $ do
+                             " *)\n(* Error was : " <> describeCGError e <> " *)")) $ do
       typeSynonym <- genCCallbackPrototype name' cb' name' False
       dynamic <- genDynamicCallableWrapper n typeSynonym cb
       export (NamedSubsection SignalSection name') dynamic
@@ -516,9 +516,9 @@ processSignalError :: Signal -> Name -> CGError -> CodeGen ()
 processSignalError signal owner err = do
   let qualifiedSignalName = upperName owner <> "::" <> sigName signal
       -- sn = (ucFirst . signalHaskellName . sigName) signal
-  line $ T.concat ["-- XXX Could not generate signal "
+  line $ T.concat ["(* Could not generate signal "
                   , qualifiedSignalName
-                  , "\n", "-- Error was : ", describeCGError err]
+                  , " *)\n", "(* Error was : ", describeCGError err, " *)"]
 
   -- Generate a placeholder SignalInfo instance that raises a type
   -- error when one attempts to use it.
@@ -550,7 +550,7 @@ genSignal s@(Signal { sigName = sn, sigCallable = cb }) on =
   -- deprecatedPragma cbType (callableDeprecated cb)
 
   genOCamlCallbackPrototype sn' cb cbType classe WithoutClosures (sigDoc s)
-  genCOCamlCallbackPrototype sn' cb cbType classe nspace True
+  -- genCOCamlCallbackPrototype sn' cb cbType classe nspace True
 
   -- genCallbackWrapperFactory (lcFirst sn') cbType
 

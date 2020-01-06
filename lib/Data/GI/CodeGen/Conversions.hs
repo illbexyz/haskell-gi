@@ -35,6 +35,7 @@ module Data.GI.CodeGen.Conversions
     , mapC
     , literal
     , Constructor(..)
+    , outParamOcamlType
     , typeToOCamlConverter
     , ocamlValueToC
     , cToOCamlValue
@@ -1148,6 +1149,60 @@ elementType t = fst <$> elementTypeAndMap t undefined
 elementMap :: Type -> Text -> Maybe Text
 elementMap t len = snd <$> elementTypeAndMap t len
 
+-- | This translates GI types to the types used for generated OCaml code.
+outParamOcamlType :: Type -> CodeGen TypeRep
+outParamOcamlType (TBasicType bt) = return $ ocamlBasicType bt
+-- There is no great choice in this case, so we simply pass the
+-- pointer along. This is useful for GdkPixbufNotify, for example.
+outParamOcamlType t@(TCArray False (-1) (-1) (TBasicType TUInt8)) =
+  foreignType t
+outParamOcamlType (TCArray _ _ _ (TBasicType TUInt8)) =
+  return $ "ByteString" `con` []
+outParamOcamlType (TCArray _ _ _ a) = do
+  inner <- outParamOcamlType a
+  return $ "[]" `con` [inner]
+outParamOcamlType (TGArray a) = do
+  inner <- outParamOcamlType a
+  return $ "[]" `con` [inner]
+outParamOcamlType (TPtrArray a) = do
+  inner <- outParamOcamlType a
+  return $ "[]" `con` [inner]
+outParamOcamlType (TByteArray) = return $ "ByteString" `con` []
+outParamOcamlType (TGList a) = do
+  inner <- outParamOcamlType a
+  return $ "[]" `con` [inner]
+outParamOcamlType (TGSList a) = do
+  inner <- outParamOcamlType a
+  return $ "[]" `con` [inner]
+outParamOcamlType (TGHash a b) = do
+  innerA <- outParamOcamlType a
+  innerB <- outParamOcamlType b
+  return $ "Map.Map" `con` [innerA, innerB]
+outParamOcamlType TError = return $ "GError" `con` []
+outParamOcamlType TVariant = return $ "GVariant" `con` []
+outParamOcamlType TParamSpec = return $ "GParamSpec" `con` []
+outParamOcamlType (TGClosure (Just inner@(TInterface n))) = do
+  innerAPI <- getAPI inner
+  case innerAPI of
+    APICallback _ -> do
+      tname <- qualifiedSymbol (callbackCType $ name n) n
+      return $ "GClosure" `con` [con0 tname]
+    -- The given inner type does not make sense, so we treat it as an
+    -- untyped closure.
+    _ -> outParamOcamlType (TGClosure Nothing)
+outParamOcamlType (TGClosure _) = do
+  tyvar <- getFreshTypeVariable
+  return $ "GClosure" `con` [con0 tyvar]
+outParamOcamlType (TInterface (Name "GObject" "Value")) = return $ "GValue" `con` []
+outParamOcamlType t@(TInterface n) = do
+  let ocamlName = camelCaseToSnakeCase $ name n
+  let tname = lowerName n
+  api <- getAPI t
+  return $ case api of
+             (APIFlags _) -> "[]" `con` [tname `con` []]
+             APIEnum _enum -> (T.toTitle (namespace n) <> "Enums." <> ocamlName) `con` []
+             _ -> obj $ ("[<`" <> T.toLower tname <> "]") `con` []
+
 typeToOCamlConverter :: Type -> ExcCodeGen Text
 typeToOCamlConverter (TBasicType t) =
   return $ case t of
@@ -1173,22 +1228,22 @@ typeToOCamlConverter (TBasicType t) =
     TPtr      -> "pointer"
     TIntPtr   -> "pointer"
     TUIntPtr  -> "pointer"
-typeToOCamlConverter (TError) = undefined
-typeToOCamlConverter (TVariant) = undefined
-typeToOCamlConverter (TParamSpec) = undefined
-typeToOCamlConverter (TCArray _b _i1 _i2 _t) = undefined
-typeToOCamlConverter (TGArray _t) = undefined
-typeToOCamlConverter (TPtrArray _t) = undefined
-typeToOCamlConverter (TByteArray) = undefined
-typeToOCamlConverter (TGList _t) = undefined
-typeToOCamlConverter (TGSList _t) = undefined
-typeToOCamlConverter (TGHash _t1 _t2) = undefined
-typeToOCamlConverter (TGClosure _m) = undefined
+typeToOCamlConverter (TError) = notImplementedError "This typeToOCamlConverter conversion isn't implemented yet"
+typeToOCamlConverter (TVariant) = notImplementedError "This typeToOCamlConverter conversion isn't implemented yet"
+typeToOCamlConverter (TParamSpec) = notImplementedError "This typeToOCamlConverter conversion isn't implemented yet"
+typeToOCamlConverter (TCArray _b _i1 _i2 _t) = notImplementedError "This typeToOCamlConverter conversion isn't implemented yet"
+typeToOCamlConverter (TGArray _t) = notImplementedError "This typeToOCamlConverter conversion isn't implemented yet"
+typeToOCamlConverter (TPtrArray _t) = notImplementedError "This typeToOCamlConverter conversion isn't implemented yet"
+typeToOCamlConverter (TByteArray) = notImplementedError "This typeToOCamlConverter conversion isn't implemented yet"
+typeToOCamlConverter (TGList _t) = notImplementedError "This typeToOCamlConverter conversion isn't implemented yet"
+typeToOCamlConverter (TGSList _t) = notImplementedError "This typeToOCamlConverter conversion isn't implemented yet"
+typeToOCamlConverter (TGHash _t1 _t2) = notImplementedError "This typeToOCamlConverter conversion isn't implemented yet"
+typeToOCamlConverter (TGClosure _m) = notImplementedError "This typeToOCamlConverter conversion isn't implemented yet"
 typeToOCamlConverter (TInterface n) = do
   let ocamlName = camelCaseToSnakeCase $ name n
   api <- findAPIByName n
   return $ case api of
-    APIEnum _enum -> T.toTitle (namespace n) <> "Enums." <> ocamlName <> "_conv"
+    APIEnum _enum -> T.toTitle (namespace n) <> "Enums.Conv." <> ocamlName
     _            -> "(gobject : " <> namespace n <> "." <> ocamlName <> " obj data_conv)"
 
 ocamlValueToC :: Type -> ExcCodeGen Text

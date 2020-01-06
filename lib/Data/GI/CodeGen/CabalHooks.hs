@@ -80,32 +80,59 @@ genModuleCode name version verbosity overrides = do
 -- the package.
 genConfigModule :: Maybe FilePath -> Text -> Maybe TaggedOverride -> IO ()
 genConfigModule outputDir modName maybeGiven = do
-  let fname = joinPath [ fromMaybe "" outputDir
-                       , "GI"
-                       , T.unpack (ucFirst modName)
-                       , "Config.hs" ]
-      dirname = takeDirectory fname
+  -- let fname = joinPath [ fromMaybe "" outputDir
+  --                      , "GI"
+  --                      , T.unpack (ucFirst modName)
+  --                      , "Config.hs" ]
+  --     dirname = takeDirectory fname
+
+  -- createDirectoryIfMissing True dirname
+
+  -- utf8WriteFile fname $ T.unlines
+  --   [ "{-# LANGUAGE OverloadedStrings #-}"
+  --   , "-- | Build time configuration used during code generation."
+  --   , "module GI." <> ucFirst modName <> ".Config ( overrides ) where"
+  --   , ""
+  --   , "import qualified Data.Text as T"
+  --   , "import Data.Text (Text)"
+  --   , ""
+  --   , "-- | Overrides used when generating these bindings."
+  --   , "overrides :: Text"
+  --   , "overrides = T.unlines"
+  --   , " [ " <> T.intercalate "\n , " (quoteOverrides maybeGiven) <> "]"
+  --   ]
+  let baseDir = joinPath [ fromMaybe "" outputDir , "GI" ]
+      dunePrj = joinPath [ baseDir , "dune-project" ]
+      dune    = joinPath [ baseDir, "dune" ]
+      objDune = joinPath [ baseDir , "Gtk" , "Objects" , "dune"]
+      dirname = takeDirectory baseDir
 
   createDirectoryIfMissing True dirname
+  
+  utf8WriteFile dunePrj "(lang dune 2.0)"
 
-  utf8WriteFile fname $ T.unlines
-    [ "{-# LANGUAGE OverloadedStrings #-}"
-    , "-- | Build time configuration used during code generation."
-    , "module GI." <> ucFirst modName <> ".Config ( overrides ) where"
-    , ""
-    , "import qualified Data.Text as T"
-    , "import Data.Text (Text)"
-    , ""
-    , "-- | Overrides used when generating these bindings."
-    , "overrides :: Text"
-    , "overrides = T.unlines"
-    , " [ " <> T.intercalate "\n , " (quoteOverrides maybeGiven) <> "]"
-    ]
+  utf8WriteFile dune $ T.unlines [ "(env"
+                                 , " (_"
+                                 , "  (binaries"
+                                 , "   ./tools/dune_config.exe)))" ]
 
-  where quoteOverrides :: Maybe TaggedOverride -> [Text]
-        quoteOverrides Nothing = []
-        quoteOverrides (Just (TaggedOverride _ ovText)) =
-          map (T.pack . show) (T.lines ovText)
+  utf8WriteFile objDune $ T.unlines [ "(rule"
+                                    , " (targets"
+                                    , "  cflag-gtk+-3.0.sexp" 
+                                    , "  clink-gtk+-3.0.sexp)"
+                                    , " (action (run dune_config -pkg gtk+-3.0 -version 3.18)))"
+                                    , "(library"
+                                    , " (name objects)"
+                                    , " (flags :standard -w -6-7-9-10-27-32-33-34-35-36-50-52 -no-strict-sequence)"
+                                    , " (c_library_flags (:include clink-gtk+-3.0.sexp))"
+                                    , " (foreign_stubs"
+                                    , "  (language c)"
+                                    , "  (names Button)"
+                                    , "  (flags (:include cflag-gtk+-3.0.sexp) (:include cflag-extraflags.sexp) -Wno-deprecated-declarations)))" ]
+  -- where quoteOverrides :: Maybe TaggedOverride -> [Text]
+  --       quoteOverrides Nothing = []
+  --       quoteOverrides (Just (TaggedOverride _ ovText)) =
+  --         map (T.pack . show) (T.lines ovText)
 
 -- | A convenience helper for `confHook`, such that bindings for the
 -- given module are generated in the @configure@ step of @cabal@.

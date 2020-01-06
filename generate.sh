@@ -37,6 +37,8 @@ then
         popd
     popd
     cp ./base-ocaml/ocaml/* "./bindings/$bindings_lib/GI/Gtk/Objects/"
+    cp ./base-ocaml/c/* "./bindings/$bindings_lib/GI/Gtk/Objects/"
+    cp -r ./base-ocaml/tools "./bindings/$bindings_lib/GI/"
 fi
 
 # pushd bindings/$bindings_lib

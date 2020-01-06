@@ -19,6 +19,7 @@ module Data.GI.CodeGen.Type
     , maybeT
     , poly
     , obj
+    , option
     ) where
 
 #if !MIN_VERSION_base(4,11,0)
@@ -52,7 +53,7 @@ typeShow (TypeRep TupleCon args) =
 typeShow (TypeRep ListCon args) =
   "[" <> T.intercalate ", " (map typeShow args) <> "]"
 typeShow (TypeRep OptionCon args) =
-  T.unlines (map typeShow args) <> " option"
+  T.concat (map typeShow args) <> " option"
 typeShow (TypeRep PolyCon args) =
   "[>`" <> T.intercalate ", " (map typeShow args) <> "]"
 typeShow (TypeRep ObjCon args) =
@@ -102,6 +103,10 @@ funptr t = "FunPtr" `con` [t]
 -- | Embed in the `Maybe` monad.
 maybeT :: TypeRep -> TypeRep
 maybeT t =  "option" `con` [t]
+
+-- | Embed in the `Maybe` monad.
+option :: TypeRep -> TypeRep
+option t =  "option" `con` [t]
 
 -- | Embed in a polymorphic variant
 poly :: TypeRep -> TypeRep

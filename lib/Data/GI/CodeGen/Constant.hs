@@ -45,7 +45,7 @@ genConstant (Name _ name) c = group $ do
   setLanguagePragmas ["PatternSynonyms", "ScopedTypeVariables", "ViewPatterns"]
   deprecatedPragma name (constantDeprecated c)
 
-  handleCGExc (\e -> line $ "-- XXX: Could not generate constant: " <> describeCGError e)
+  handleCGExc (\e -> line $ "(* Could not generate constant: " <> describeCGError e <> " *)")
     (do writeDocumentation DocBeforeSymbol (constantDocumentation c)
         assignValue name (constantType c) (constantValue c)
         export ToplevelSection ("pattern " <> ucFirst name))

@@ -199,7 +199,7 @@ setterDoc n prop = T.unlines [
 --   export docSection setter
 
 genPropertySetter :: Text -> Name -> Property -> CodeGen ()
-genPropertySetter setter classe _prop = group $
+genPropertySetter setter classe _prop =
   gline $ "method set_" <> setter <> " = set " <> name classe <> ".P." <> setter <> " obj"
 
 -- | Generate documentation for the given getter.
@@ -251,10 +251,10 @@ genPropertyGetter getter classe _prop =
   gline $ "method " <> getter <> " = get " <> name classe <> ".P." <> getter <> " obj"
 
 genPropertyOCaml :: Name -> Property -> ExcCodeGen ()
-genPropertyOCaml classe prop = group $ do
+genPropertyOCaml classe prop = do
   let pName = propName prop
       uScoresName = hyphensToUnderscores pName
-      classType = typeShow $ poly $ con0 $ lowerName classe
+      classType = typeShow $ poly $ con0 $ T.toLower $ lowerName classe
   -- TODO: uncomment next line
   -- writeHaddock DocBeforeSymbol (getterDoc n prop) 
   ocamlConverter <- typeToOCamlConverter $ propType prop
@@ -502,21 +502,23 @@ genPlaceholderProperty owner prop = do
 genMakeParams :: [Property] -> CodeGen ()
 genMakeParams props = do
   let constructors = filter isConstructor props
-      constructorNames = map propName constructors
-      underlinedConstrNames = map hyphensToUnderscores constructorNames
-      optionalArgs = "?" <> T.intercalate " ?" underlinedConstrNames
-  line $ "let make_params ~cont pl " <> optionalArgs <> " ="
-  indent $ do
-    let numConstructors = length underlinedConstrNames
-        firstConstrs = take (numConstructors - 1) underlinedConstrNames
-        lastConstr = last underlinedConstrNames
-    line "let pl = ("
+  unless (null constructors) $ do
+    let constructorNames = map propName constructors
+        underlinedConstrNames = map hyphensToUnderscores constructorNames
+        optionalArgs = "?" <> T.intercalate " ?" underlinedConstrNames
+    blank
+    line $ "let make_params ~cont pl " <> optionalArgs <> " ="
     indent $ do
-      let mayCons constrName = "may_cons P." <> constrName <> " " <> constrName
-      forM_ firstConstrs $ \cName ->
-        line $ mayCons cName <> " ("
-      line $ mayCons lastConstr <> " pl" <> T.pack (replicate numConstructors ')') <> " in"
-    line "cont pl"
+      let numConstructors = length underlinedConstrNames
+          firstConstrs = take (numConstructors - 1) underlinedConstrNames
+          lastConstr = last underlinedConstrNames
+      line "let pl = ("
+      indent $ do
+        let mayCons constrName = "may_cons P." <> constrName <> " " <> constrName
+        forM_ firstConstrs $ \cName ->
+          line $ mayCons cName <> " ("
+        line $ mayCons lastConstr <> " pl" <> T.pack (replicate numConstructors ')') <> " in"
+      line "cont pl"
   where isConstructor prop =
             PropertyConstructOnly `elem` propFlags prop
             || PropertyConstruct `elem` propFlags prop

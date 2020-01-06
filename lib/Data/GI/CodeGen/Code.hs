@@ -1022,7 +1022,6 @@ writeModuleInfo verbose dirPrefix minfo = do
   createDirectoryIfMissing True dirname
   -- utf8WriteFile fname (T.unlines [pragmas, optionsGHC, haddock, cppMacros,
   --                                prelude, imports, deps, code])
-  
   utf8WriteFile fname (T.unlines [haddock, code])
 
   -- when (not . isCodeEmpty $ bootCode minfo) $ do

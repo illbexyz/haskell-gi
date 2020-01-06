@@ -90,16 +90,19 @@ mkForeignImport mn cSymbol callable = do
     first = "external " <> camelCaseToSnakeCase (lowerName mn) <> " : "
     fArgStr arg = do
         ocamlType <- haskellType $ argType arg
+        
+        let ocamlType' = if mayBeNull arg then option ocamlType else ocamlType
+
         -- ft <- foreignType $ argType arg
         -- let ft' = if direction arg == DirectionIn || argCallerAllocates arg
         --           then ft
         --           else ptr ft
-        let start = typeShow ocamlType <> " -> "
+        let start = typeShow ocamlType' <> " -> "
         return $ padTo 40 start <> "(* " <> argCName arg
                    <> " : " <> tshow (argType arg) <> " *)"
     last = typeShow <$> case returnType callable of
                                  Nothing -> return $ con0 "unit"
-                                 Just r  -> haskellType r
+                                 Just r  -> outParamOcamlType r
 
 genMlMacro :: Text -> Callable -> ExcCodeGen ()
 genMlMacro cSymbol callable = do

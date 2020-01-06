@@ -54,9 +54,9 @@ genFunction n (Function symbol fnMovedTo callable) =
     when (Nothing == fnMovedTo) $
       group $ do
         line $ "-- function " <> symbol
-        handleCGExc (\e -> line ("-- XXX Could not generate function "
+        handleCGExc (\e -> line ("(* Could not generate function "
                            <> symbol
-                           <> "\n-- Error was : " <> describeCGError e))
+                           <> " *)\n(* Error was : " <> describeCGError e <> " *)"))
                         (do
                           genCCallableWrapper n symbol callable
                           export (NamedSubsection MethodSection $ lowerName n) (lowerName n)
@@ -132,9 +132,9 @@ genStruct n s = unless (ignoreStruct n s) $ do
        isFunction <- symbolFromFunction (methodSymbol f)
        if not isFunction
        then handleCGExc
-               (\e -> line ("-- XXX Could not generate method "
-                            <> name' <> "::" <> name mn <> "\n"
-                            <> "-- Error was : " <> describeCGError e) >>
+               (\e -> line ("(* Could not generate method "
+                            <> name' <> "::" <> name mn <> " *)\n"
+                            <> "(* Error was : " <> describeCGError e <> " *)") >>
                 return Nothing)
                (genMethod n f >> return (Just (n, f)))
        else return Nothing
@@ -176,9 +176,9 @@ genUnion n u = do
       isFunction <- symbolFromFunction (methodSymbol f)
       if not isFunction
       then handleCGExc
-                (\e -> line ("-- XXX Could not generate method "
-                             <> name' <> "::" <> name mn <> "\n"
-                             <> "-- Error was : " <> describeCGError e)
+                (\e -> line ("(* Could not generate method "
+                             <> name' <> "::" <> name mn <> " *)\n"
+                             <> "(* Error was : " <> describeCGError e <> " *)")
                 >> return Nothing)
                 (genMethod n f >> return (Just (n, f)))
       else return Nothing
@@ -246,7 +246,8 @@ genMethod cn m@(Method {
                   methodCallable = c,
                   methodType = t
                 }) =
-    when (t /= Constructor) $ do
+    when (t /= Constructor && all (\a -> direction a /= DirectionOut) (args c)) $ do
+      -- TODO: Handle out params
       returnsGObject <- maybe (return False) isGObject (returnType c)
 
       -- commentLine $ "method " <> name' <> "::" <> name mn
@@ -260,6 +261,8 @@ genMethod cn m@(Method {
                 else c'
 
       genCCallableWrapper mn sym c''
+      
+      gline $ "method " <> name mn <> " = " <> name cn <> "." <> name mn <> " obj"
       
       -- export (NamedSubsection MethodSection $ lowerName mn) (lowerName mn')
 
@@ -355,8 +358,9 @@ isSetterOrGetter o m =
 -- GObject. This is the case for everything except the ParamSpec* set
 -- of objects, we deal with these separately.
 genObject :: Name -> Object -> CodeGen ()
-genObject n o =
-  if (name n /= "Button") && (name n /= "Range") then
+genObject n o = -- do
+  -- if name n `notElem` ["Button", "ToggleButton", "RadioButton", "Toolbar", "ColorButton", "FontButton", "Range"] then
+  if name n `notElem` ["Button", "RadioButton"] then
     commentLine "Ignored: I'm generating only button and range"
   else do
     let name' = upperName n
@@ -385,6 +389,11 @@ genObject n o =
       let nspace = namespace n
       let objectName = name n
 
+      -- TODO: not sure
+      parents <- reverse . filter (not . T.isPrefixOf "Object" . name) <$> instanceTree n
+
+      cline $ "#define " <> nspace <> objectName <> "_val(" <> "val) check_cast(" <> T.toUpper (nspace <> "_" <> objectName) <> ", val)"
+
       gline "open GtkSignal"
       gline "open Gobject"
       gline "open Data"
@@ -392,10 +401,15 @@ genObject n o =
       gline $ "open " <> objectName
       gblank
 
-      gline $ "class " <> lcFirst objectName <> " obj = object"
+      gline $ "class virtual " <> camelCaseToSnakeCase (lcFirst objectName) <> " obj = object (self)"
       -- TODO: Probably we must export somewhere the full type
       --       (ex: [bin | `button]) and use this type
-      gindent $ gline $ "val obj : " <> "[>`" <> lcFirst objectName <> "] obj = obj"
+      gindent $ do
+        gline $ "val obj : " <> "[>`" <> T.toLower (lcFirst objectName) <> "] obj = obj"
+        gline "method private virtual connect : 'b. ('a,'b) GtkSignal.t -> callback:'b -> GtkSignal.id"
+
+      -- mapM_ (\p -> gline $ "inherit G" <> name p <> "." <> lcFirst (name p) <> " obj") parents
+      gblank
 
       line "open Gobject"
       line "open Data"
@@ -403,26 +417,30 @@ genObject n o =
       blank
       line "open Gtk"
 
-      group $ do
+      unless (null $ objProperties o) $ group $ do
         line "let may_cons = Property.may_cons"
         line "let may_cons_opt = Property.may_cons_opt"
+        blank
+        gline "(* Properties *)"
+        genObjectProperties n o
+        gblank
 
-      line "module S = struct"
-      indent $ line $ "open " <> nspace <> "Signal"
-      indent $ do
-        forM_ (objSignals o) $ \s -> genSignal s n
-      line "end"
-
-      group $ genObjectProperties n o
+      unless (null $ objSignals o) $ group $ do
+        gline "(* Signals *)"
+        line "module S = struct"
+        indent $ do
+          line $ "open " <> nspace <> "Signal"
+          forM_ (objSignals o) $ \s -> genSignal s n
+        line "end"
 
       group $
         line $ "let cast w : "
-          <> nspace <> "." <> T.toLower objectName <> " obj = try_cast w "
+          <> nspace <> "." <> camelCaseToSnakeCase objectName <> " obj = try_cast w "
           <> "\"" <> nspace <> objectName <> "\""
 
       group $
         line $ "let create pl : "
-          <> nspace <> "." <> T.toLower objectName <> " obj = Object.make "
+          <> nspace <> "." <> camelCaseToSnakeCase objectName <> " obj = Object.make "
           <> "\"" <> nspace <> objectName <> "\" pl"
       -- cppIf CPPOverloading $
       --     genNamespacedPropLabels n (objProperties o) (objMethods o)
@@ -430,14 +448,16 @@ genObject n o =
       --     genObjectSignals n o
 
       -- Methods
+      gblank
+      gline "(* Methods *)"
       let methods = objMethods o
       let methods' = filter (not . isSetterOrGetter o) methods
 
       forM_ methods' $ \f -> do
         let mn = methodName f
-        handleCGExc (\e -> commentLine ("XXX Could not generate method "
-                                <> name' <> "::" <> name mn <> "\n"
-                                <> "Error was : " <> describeCGError e))
+        handleCGExc (\e -> line ("(* Could not generate method "
+                                <> name' <> "::" <> name mn <> " *)\n"
+                                <> "(* Error was : " <> describeCGError e <> " *)"))
                     (genMethod n f)
                     -- >> (cppIf CPPOverloading $
                     --         genUnsupportedMethodInfo n f))
@@ -460,9 +480,9 @@ genInterface n iface = do
   noName name'
 
   forM_ (ifSignals iface) $ \s -> handleCGExc
-     (line . (T.concat ["-- XXX Could not generate signal ", name', "::"
+     (commentLine . (T.concat ["Could not generate signal ", name', "::"
                      , sigName s
-                     , "\n", "-- Error was : "] <>) . describeCGError)
+                     , " *)\n", "(* Error was : "] <>) . describeCGError)
      (genSignal s n)
 
   cppIf CPPOverloading $
@@ -512,9 +532,9 @@ genInterface n iface = do
       isFunction <- symbolFromFunction (methodSymbol f)
       unless isFunction $
              handleCGExc
-             (\e -> line ("-- XXX Could not generate method "
-                          <> name' <> "::" <> name mn <> "\n"
-                          <> "-- Error was : " <> describeCGError e)
+             (\e -> line ("(* Could not generate method "
+                          <> name' <> "::" <> name mn <> " *)\n"
+                          <> "(* Error was : " <> describeCGError e <> " *)")
              >> (cppIf CPPOverloading $
                       genUnsupportedMethodInfo n f))
              (genMethod n f)
