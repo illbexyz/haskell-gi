@@ -555,27 +555,27 @@ symbolFromFunction sym = do
             sym1 == sym2 && movedTo == Nothing
         hasSymbol _ _ = False
 
--- genAPI :: Name -> API -> CodeGen ()
--- genAPI n (APIConst c) = genConstant n c
--- genAPI n (APIFunction f) = genFunction n f
--- genAPI n (APIEnum e) = genEnum n e
--- genAPI n (APIFlags f) = genFlags n f
--- genAPI n (APICallback c) = genCallback n c
--- genAPI n (APIStruct s) = genStruct n s
--- genAPI n (APIUnion u) = genUnion n u
--- genAPI n (APIObject o) = genObject n o
--- genAPI n (APIInterface i) = genInterface n i
-
 genAPI :: Name -> API -> CodeGen ()
-genAPI _n (APIConst _c) = return ()
-genAPI _n (APIFunction _f) = return ()
-genAPI _n (APIEnum _e) = return ()
-genAPI _n (APIFlags _f) = return ()
-genAPI _n (APICallback _c) = return ()
-genAPI _n (APIStruct _s) = return ()
-genAPI _n (APIUnion _u) = return ()
+genAPI n (APIConst c) = genConstant n c
+genAPI n (APIFunction f) = genFunction n f
+genAPI n (APIEnum e) = genEnum n e
+genAPI n (APIFlags f) = genFlags n f
+genAPI n (APICallback c) = genCallback n c
+genAPI n (APIStruct s) = genStruct n s
+genAPI n (APIUnion u) = genUnion n u
 genAPI n (APIObject o) = genObject n o
-genAPI _n (APIInterface _i) = return ()
+genAPI n (APIInterface i) = genInterface n i
+
+-- genAPI :: Name -> API -> CodeGen ()
+-- genAPI _n (APIConst _c) = return ()
+-- genAPI _n (APIFunction _f) = return ()
+-- genAPI n (APIEnum e) = genEnum n e
+-- genAPI _n (APIFlags _f) = return ()
+-- genAPI _n (APICallback _c) = return ()
+-- genAPI n (APIStruct s) = genStruct n s
+-- genAPI _n (APIUnion _u) = return ()
+-- genAPI n (APIObject o) = genObject n o
+-- genAPI _n (APIInterface _i) = return ()
 
 -- | Generate the code for a given API in the corresponding module.
 genAPIModule :: Name -> API -> CodeGen ()

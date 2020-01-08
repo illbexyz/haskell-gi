@@ -8,7 +8,7 @@ import Control.Monad (when, forM_)
 #if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
 #endif
-import Data.Text (Text)
+import Data.Text (Text, intercalate, toUpper, toLower)
 import qualified Data.Set as S
 
 import Foreign.C (CUInt)
@@ -18,7 +18,7 @@ import Data.GI.CodeGen.API
 import Data.GI.CodeGen.Code
 import Data.GI.CodeGen.Haddock (deprecatedPragma, writeDocumentation,
                                 writeHaddock, RelativeDocPosition(..))
-import Data.GI.CodeGen.SymbolNaming (upperName)
+import Data.GI.CodeGen.SymbolNaming (upperName, camelCaseToSnakeCase)
 import Data.GI.CodeGen.Util (tshow)
 
 -- | Given a list of named enum members, filter out those that have
@@ -44,48 +44,53 @@ genEnumOrFlags docSection n@(Name ns name) e = do
   when (enumStorageBytes e /= 4) $
        notImplementedError $ "Storage of size /= 4 not supported : " <> tshow (enumStorageBytes e)
 
-  let name' = upperName n
-      members' = flip map (enumMembers e) $ \member ->
-        let n = upperName $ Name ns (name <> "_" <> enumMemberName member)
-        in (n, member)
+  let enumName = camelCaseToSnakeCase $ toLower ns <> upperName n
+  let enumMembs = map (("`" <>) . toUpper . enumMemberName) (enumMembers e)
 
-  deprecatedPragma name' (enumDeprecated e)
+  line $ "type " <> enumName <> " = [ " <> intercalate " | " enumMembs <> " ]" 
 
-  group $ do
-    export docSection (name' <> "(..)")
-    hsBoot . line $ "data " <> name'
-    writeDocumentation DocBeforeSymbol (enumDocumentation e)
-    line $ "data " <> name' <> " = "
-    indent $
-      case members' of
-        ((fieldName, firstMember):fs) -> do
-          line $ "  " <> fieldName
-          writeDocumentation DocAfterSymbol (enumMemberDoc firstMember)
-          forM_ fs $ \(n, member) -> do
-            line $ "| " <> n
-            writeDocumentation DocAfterSymbol (enumMemberDoc member)
-          line $ "| Another" <> name' <> " Int"
-          writeHaddock DocAfterSymbol "Catch-all for unknown values"
-          line "deriving (Show, Eq)"
-        _ -> return ()
+  -- let name' = upperName n
+  --     members' = flip map (enumMembers e) $ \member ->
+  --       let n = upperName $ Name ns (name <> "_" <> enumMemberName member)
+  --       in (n, member)
 
-  group $ do
-    bline $ "instance P.Enum " <> name' <> " where"
-    indent $ do
-            forM_ members' $ \(n, m) ->
-                line $ "fromEnum " <> n <> " = " <> tshow (enumMemberValue m)
-            line $ "fromEnum (Another" <> name' <> " k) = k"
-    blank
-    indent $ do
-            forM_ (dropDuplicated members') $ \(n, m) ->
-                line $ "toEnum " <> tshow (enumMemberValue m) <> " = " <> n
-            line $ "toEnum k = Another" <> name' <> " k"
+  -- deprecatedPragma name' (enumDeprecated e)
 
-  group $ do
-    line $ "instance P.Ord " <> name' <> " where"
-    indent $ line "compare a b = P.compare (P.fromEnum a) (P.fromEnum b)"
+  -- group $ do
+  --   export docSection (name' <> "(..)")
+  --   hsBoot . line $ "data " <> name'
+  --   writeDocumentation DocBeforeSymbol (enumDocumentation e)
+  --   line $ "data " <> name' <> " = "
+  --   indent $
+  --     case members' of
+  --       ((fieldName, firstMember):fs) -> do
+  --         line $ "  " <> fieldName
+  --         writeDocumentation DocAfterSymbol (enumMemberDoc firstMember)
+  --         forM_ fs $ \(n, member) -> do
+  --           line $ "| " <> n
+  --           writeDocumentation DocAfterSymbol (enumMemberDoc member)
+  --         line $ "| Another" <> name' <> " Int"
+  --         writeHaddock DocAfterSymbol "Catch-all for unknown values"
+  --         line "deriving (Show, Eq)"
+  --       _ -> return ()
 
-  maybe (return ()) (genErrorDomain docSection name') (enumErrorDomain e)
+  -- group $ do
+  --   bline $ "instance P.Enum " <> name' <> " where"
+  --   indent $ do
+  --           forM_ members' $ \(n, m) ->
+  --               line $ "fromEnum " <> n <> " = " <> tshow (enumMemberValue m)
+  --           line $ "fromEnum (Another" <> name' <> " k) = k"
+  --   blank
+  --   indent $ do
+  --           forM_ (dropDuplicated members') $ \(n, m) ->
+  --               line $ "toEnum " <> tshow (enumMemberValue m) <> " = " <> n
+  --           line $ "toEnum k = Another" <> name' <> " k"
+
+  -- group $ do
+  --   line $ "instance P.Ord " <> name' <> " where"
+  --   indent $ line "compare a b = P.compare (P.fromEnum a) (P.fromEnum b)"
+
+  -- maybe (return ()) (genErrorDomain docSection name') (enumErrorDomain e)
 
 genBoxedEnum :: Name -> Text -> CodeGen ()
 genBoxedEnum n typeInit = do
@@ -100,15 +105,17 @@ genBoxedEnum n typeInit = do
        indent $ line $ "boxedEnumType _ = c_" <> typeInit
 
 genEnum :: Name -> Enumeration -> CodeGen ()
-genEnum n@(Name _ name) enum = do
-  line $ "-- Enum " <> name
+genEnum n@(Name _ _name) enum = do
+  -- line $ "-- Enum " <> name
 
   let docSection = NamedSubsection EnumSection (upperName n)
+  -- handleCGExc (\e -> commentLine $ "Could not generate: " <> describeCGError e)
+  --             (do genEnumOrFlags docSection n enum
+  --                 case enumTypeInit enum of
+  --                   Nothing -> return ()
+  --                   Just ti -> genBoxedEnum n ti)
   handleCGExc (\e -> commentLine $ "Could not generate: " <> describeCGError e)
-              (do genEnumOrFlags docSection n enum
-                  case enumTypeInit enum of
-                    Nothing -> return ()
-                    Just ti -> genBoxedEnum n ti)
+              (genEnumOrFlags docSection n enum)
 
 genBoxedFlags :: Name -> Text -> CodeGen ()
 genBoxedFlags n typeInit = do
