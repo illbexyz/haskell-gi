@@ -39,4 +39,3 @@ TAGS
 *.ui~
 *.gresource
 stack*.yaml.lock
-base-ocaml/
