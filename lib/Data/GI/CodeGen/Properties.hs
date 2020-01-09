@@ -257,7 +257,7 @@ genPropertyOCaml classe prop = do
       classType = typeShow $ poly $ con0 $ T.toLower $ lowerName classe
   -- TODO: uncomment next line
   -- writeHaddock DocBeforeSymbol (getterDoc n prop) 
-  ocamlConverter <- typeToOCamlConverter $ propType prop
+  ocamlConverter <- ocamlDataConv $ propType prop
   line $ "let " <> uScoresName <> " : " <> "(" <> classType <> ",_) property ="
   indent $ line $ "{"
     <> "name=\"" <> pName <> "\"; "
@@ -530,11 +530,11 @@ genProperties n ownedProps _allProps = do
     let name = upperName n
 
     forM_ ownedProps $ \prop ->
-        handleCGExc (\err -> do
-                      line $ "-- XXX Generation of property \""
+        handleCGExc (\err ->
+                      commentLine $ "XXX Generation of property \""
                                 <> propName prop <> "\" of object \""
-                                <> name <> "\" failed: " <> describeCGError err
-                      cppIf CPPOverloading (genPlaceholderProperty n prop))
+                                <> name <> "\" failed: " <> describeCGError err)
+                      -- cppIf CPPOverloading (genPlaceholderProperty n prop))
                     (genOneProperty n prop)
 
     -- cppIf CPPOverloading $ do

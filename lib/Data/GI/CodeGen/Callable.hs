@@ -78,8 +78,9 @@ mkForeignImport mn cSymbol callable = do
     line first
     indent $ do
         mapM_ (\a -> line =<< fArgStr a) (args callable)
-        when (callableThrows callable) $
-               line $ padTo 40 "Ptr (Ptr GError) -> " <> "-- error"
+        -- TODO: Handle exceptions in some way
+        -- when (callableThrows callable) $
+        --        line $ padTo 40 "Ptr (Ptr GError) -> " <> "-- error"
         line =<< last
         line $ "= \"ml_" <> cSymbol <> "\""
     return hSymbol
@@ -109,6 +110,7 @@ genMlMacro cSymbol callable = do
   let nArgs = T.pack $ show $ length $ args callable
   let macroName = "ML_" <> nArgs <> " ("
   retTypeName <- cToOCamlValue $ returnType callable
+  -- TODO: Handle option
   argsTypes   <- mapM (ocamlValueToC . argType) (args callable)
   let macroArgs = T.intercalate ", " (cSymbol : argsTypes ++ [retTypeName])
   cline $ macroName <> macroArgs <> ")"

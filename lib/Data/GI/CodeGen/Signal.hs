@@ -80,10 +80,7 @@ genHaskellCallbackPrototype subsec cb htype expose doc = group $ do
           "`@."
 
 argsTypeRep :: [Arg] -> ExcCodeGen [Text]
-argsTypeRep = mapM conv
-  where conv arg = do
-          ocamlType <- typeToOCamlConverter $ argType arg 
-          return $ ocamlType
+argsTypeRep = mapM (ocamlDataConv . argType)
 
 ocamlMarshaller :: [Arg] -> Text -> Text -> ExcCodeGen Text
 ocamlMarshaller args sigName onName = case args of
