@@ -17,7 +17,7 @@ import Data.Monoid ((<>))
 import Data.Text (Text)
 
 import Data.GI.CodeGen.API
-import Data.GI.CodeGen.Code (findAPIByName, CodeGen, line, commentLine)
+import Data.GI.CodeGen.Code (findAPIByName, CodeGen, commentLine)
 import Data.GI.CodeGen.Util (tshow)
 import Data.GI.CodeGen.Fixups (dropMovedItems)
 

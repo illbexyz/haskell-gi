@@ -6,7 +6,7 @@ module Data.GI.CodeGen.CodeGen
 
 import Control.Monad (forM, forM_, when, unless, filterM)
 import Data.List (nub)
-import Data.Maybe (fromJust, fromMaybe, catMaybes, mapMaybe)
+import Data.Maybe (fromJust, fromMaybe, mapMaybe)
 #if !MIN_VERSION_base(4,13,0)
 import Data.Monoid ((<>))
 #endif
@@ -15,7 +15,7 @@ import qualified Data.Text as T
 import Data.Text (Text)
 
 import Data.GI.CodeGen.API
-import Data.GI.CodeGen.Callable (genCCallableWrapper, callableHOutArgs, hOutType)
+import Data.GI.CodeGen.Callable (genCCallableWrapper)
 import Data.GI.CodeGen.Constant (genConstant)
 import Data.GI.CodeGen.Code
 import Data.GI.CodeGen.EnumFlags (genEnum, genFlags)
@@ -26,23 +26,17 @@ import Data.GI.CodeGen.GObject
 import Data.GI.CodeGen.Haddock (deprecatedPragma, addSectionDocumentation,
                                 writeHaddock,
                                 RelativeDocPosition(DocBeforeSymbol))
-import Data.GI.CodeGen.Inheritance (instanceTree, fullObjectMethodList,
-                       fullInterfaceMethodList)
-import Data.GI.CodeGen.Properties (genInterfaceProperties, genObjectProperties,
-                      genNamespacedPropLabels)
-import Data.GI.CodeGen.OverloadedSignals (genInterfaceSignals, genObjectSignals)
-import Data.GI.CodeGen.OverloadedMethods (genMethodList, genMethodInfo,
-                             genUnsupportedMethodInfo)
+import Data.GI.CodeGen.Inheritance (instanceTree)
+import Data.GI.CodeGen.Properties (genInterfaceProperties, genObjectProperties)
 import Data.GI.CodeGen.Signal (genSignal, genCallback)
 import Data.GI.CodeGen.Struct (genStructOrUnionFields, extractCallbacksInStruct,
                   fixAPIStructs, ignoreStruct, genZeroStruct, genZeroUnion,
                   genWrappedPtr)
 import Data.GI.CodeGen.SymbolNaming (upperName, classConstraint, noName,
-                                     submoduleLocation, lowerName, qualifiedAPI,
+                                     submoduleLocation, lowerName,
                                      camelCaseToSnakeCase, hyphensToUnderscores)
 import Data.GI.CodeGen.Type
-import Data.GI.CodeGen.Util (tshow, lcFirst)
-import Debug.Trace
+import Data.GI.CodeGen.Util (lcFirst)
 
 -- | Standard derived instances for newtypes wrapping @ManagedPtr@s.
 newtypeDeriving :: CodeGen ()
@@ -62,26 +56,6 @@ genFunction n (Function symbol fnMovedTo callable) =
                           export (NamedSubsection MethodSection $ lowerName n) (lowerName n)
                         )
 
--- | Generate the GValue instances for the given GObject.
-genBoxedGValueInstance :: Name -> Text -> CodeGen ()
-genBoxedGValueInstance n get_type_fn = do
-  let name' = upperName n
-      doc = "Convert '" <> name' <> "' to and from 'Data.GI.Base.GValue.GValue' with 'Data.GI.Base.GValue.toGValue' and 'Data.GI.Base.GValue.fromGValue'."
-
-  writeHaddock DocBeforeSymbol doc
-
-  group $ do
-    bline $ "instance B.GValue.IsGValue " <> name' <> " where"
-    indent $ group $ do
-      line $ "toGValue o = do"
-      indent $ group $ do
-        line $ "gtype <- " <> get_type_fn
-        line $ "B.ManagedPtr.withManagedPtr o (B.GValue.buildGValue gtype B.GValue.set_boxed)"
-      line $ "fromGValue gv = do"
-      indent $ group $ do
-        line $ "ptr <- B.GValue.get_boxed gv :: IO (Ptr " <> name' <> ")"
-        line $ "B.ManagedPtr.newBoxed " <> name' <> " ptr"
-
 genBoxedObject :: Name -> Text -> CodeGen ()
 genBoxedObject n typeInit = do
   let name' = upperName n
@@ -95,19 +69,16 @@ genBoxedObject n typeInit = do
        line $ "instance BoxedObject " <> name' <> " where"
        indent $ line $ "boxedType _ = " <> get_type_fn
 
-  genBoxedGValueInstance n get_type_fn
-
-  hsBoot $ line $ "instance BoxedObject " <> name' <> " where"
+  line $ "instance BoxedObject " <> name' <> " where"
 
 -- | Generate wrapper for structures.
 genStruct :: Name -> Struct -> CodeGen ()
 genStruct n s = unless (ignoreStruct n s) $ do
    let name' = upperName n
 
-   writeHaddock DocBeforeSymbol ("Memory-managed wrapper type.")
-   let decl = line $ "newtype " <> name' <> " = " <> name' <> " (ManagedPtr " <> name' <> ")"
-   hsBoot decl
-   decl
+   writeHaddock DocBeforeSymbol "Memory-managed wrapper type."
+   line $ "newtype " <> name' <> " = " <> name' <> " (ManagedPtr " <> name' <> ")"
+
    newtypeDeriving
 
    addSectionDocumentation ToplevelSection (structDocumentation s)
@@ -116,7 +87,7 @@ genStruct n s = unless (ignoreStruct n s) $ do
    then genBoxedObject n (fromJust $ structTypeInit s)
    else genWrappedPtr n (structAllocationInfo s) (structSize s)
 
-   exportDecl (name' <> ("(..)"))
+   exportDecl (name' <> "(..)")
 
    -- Generate a builder for a structure filled with zeroes.
    genZeroStruct n s
@@ -127,7 +98,7 @@ genStruct n s = unless (ignoreStruct n s) $ do
    genStructOrUnionFields n (structFields s)
 
    -- Methods
-   methods <- forM (structMethods s) $ \f -> do
+   _methods <- forM (structMethods s) $ \f -> do
        let mn = methodName f
        isFunction <- symbolFromFunction (methodSymbol f)
        if not isFunction
@@ -139,19 +110,16 @@ genStruct n s = unless (ignoreStruct n s) $ do
                (genMethod n f >> return (Just (n, f)))
        else return Nothing
 
-   -- Overloaded methods
-   cppIf CPPOverloading $
-        genMethodList n (catMaybes methods)
+   return ()
 
 -- | Generated wrapper for unions.
 genUnion :: Name -> Union -> CodeGen ()
 genUnion n u = do
   let name' = upperName n
 
-  writeHaddock DocBeforeSymbol ("Memory-managed wrapper type.")
-  let decl = line $ "newtype " <> name' <> " = " <> name' <> " (ManagedPtr " <> name' <> ")"
-  hsBoot decl
-  decl
+  writeHaddock DocBeforeSymbol "Memory-managed wrapper type."
+  line $ "newtype " <> name' <> " = " <> name' <> " (ManagedPtr " <> name' <> ")"
+
   newtypeDeriving
 
   addSectionDocumentation ToplevelSection (unionDocumentation u)
@@ -171,7 +139,7 @@ genUnion n u = do
   genStructOrUnionFields n (unionFields u)
 
   -- Methods
-  methods <- forM (unionMethods u) $ \f -> do
+  _methods <- forM (unionMethods u) $ \f -> do
       let mn = methodName f
       isFunction <- symbolFromFunction (methodSymbol f)
       if not isFunction
@@ -183,9 +151,7 @@ genUnion n u = do
                 (genMethod n f >> return (Just (n, f)))
       else return Nothing
 
-  -- Overloaded methods
-  cppIf CPPOverloading $
-       genMethodList n (catMaybes methods)
+  return ()
 
 -- | When parsing the GIR file we add the implicit object argument to
 -- methods of an object.  Since we are prepending an argument we need
@@ -240,12 +206,12 @@ fixConstructorReturnType returnsGObject cn c = c { returnType = returnType' }
                         returnType c
 
 genMethod :: Name -> Method -> ExcCodeGen ()
-genMethod cn m@(Method {
+genMethod cn Method {
                   methodName = mn,
                   methodSymbol = sym,
                   methodCallable = c,
                   methodType = t
-                }) =
+                } =
     when (t /= Constructor && all (\a -> direction a /= DirectionOut) (args c)) $ do
       -- TODO: Handle out params
       returnsGObject <- maybe (return False) isGObject (returnType c)
@@ -266,85 +232,12 @@ genMethod cn m@(Method {
       
       -- export (NamedSubsection MethodSection $ lowerName mn) (lowerName mn')
 
-      -- cppIf CPPOverloading $
-      --      genMethodInfo cn (m {methodCallable = c''})
-
--- | Generate the GValue instances for the given GObject.
-genGObjectGValueInstance :: Name -> Text -> CodeGen ()
-genGObjectGValueInstance n get_type_fn = do
-  let name' = upperName n
-      doc = "Convert '" <> name' <> "' to and from 'Data.GI.Base.GValue.GValue' with 'Data.GI.Base.GValue.toGValue' and 'Data.GI.Base.GValue.fromGValue'."
-
-  writeHaddock DocBeforeSymbol doc
-
-  group $ do
-    bline $ "instance B.GValue.IsGValue " <> name' <> " where"
-    indent $ group $ do
-      line $ "toGValue o = do"
-      indent $ group $ do
-        line $ "gtype <- " <> get_type_fn
-        line $ "B.ManagedPtr.withManagedPtr o (B.GValue.buildGValue gtype B.GValue.set_object)"
-      line $ "fromGValue gv = do"
-      indent $ group $ do
-        line $ "ptr <- B.GValue.get_object gv :: IO (Ptr " <> name' <> ")"
-        line $ "B.ManagedPtr.newObject " <> name' <> " ptr"
-
 -- Type casting with type checking
+-- TODO: Move stuff in here
 genGObjectCasts :: Name -> Text -> [Name] -> CodeGen ()
-genGObjectCasts n cn_ parents = do
-  let name' = upperName n
-      get_type_fn = "c_" <> cn_
+genGObjectCasts (Name nspace n) _cn_ _parents =
+  cline $ "#define " <> nspace <> n <> "_val(" <> "val) check_cast(" <> T.toUpper (nspace <> "_" <> n) <> ", val)" 
 
-  group $ do
-    line $ "foreign import ccall \"" <> cn_ <> "\""
-    indent $ line $ get_type_fn <> " :: IO GType"
-
-  group $ do
-    bline $ "instance GObject " <> name' <> " where"
-    indent $ group $ do
-            line $ "gobjectType = " <> get_type_fn
-
-  genGObjectGValueInstance n get_type_fn
-
-  className <- classConstraint n
-  group $ do
-    exportDecl className
-    writeHaddock DocBeforeSymbol (classDoc name')
-
-    -- Create the IsX constraint. We cannot simply say
-    --
-    -- > type IsX o = (GObject o, ...)
-    --
-    -- since we sometimes need to refer to @IsX@ itself, without
-    -- applying it. We instead use the trick of creating a class with
-    -- a universal instance.
-    let constraints = "(GObject o, O.IsDescendantOf " <> name' <> " o)"
-    bline $ "class " <> constraints <> " => " <> className <> " o"
-    bline $ "instance " <> constraints <> " => " <> className <> " o"
-
-    blank
-
-    qualifiedParents <- mapM qualifiedAPI parents
-    bline $ "instance O.HasParentTypes " <> name'
-    line $ "type instance O.ParentTypes " <> name' <> " = '["
-      <> T.intercalate ", " qualifiedParents <> "]"
-
-  -- Safe downcasting.
-  group $ do
-    let safeCast = "to" <> name'
-    exportDecl safeCast
-    writeHaddock DocBeforeSymbol (castDoc name')
-    line $ safeCast <> " :: (MonadIO m, " <> className <> " o) => o -> m " <> name'
-    line $ safeCast <> " = liftIO . unsafeCastTo " <> name'
-
-  where castDoc :: Text -> Text
-        castDoc name' = "Cast to `" <> name' <>
-                        "`, for types for which this is known to be safe. " <>
-                        "For general casts, use `Data.GI.Base.ManagedPtr.castTo`."
-
-        classDoc :: Text -> Text
-        classDoc name' = "Type class for types which can be safely cast to `"
-                         <> name' <> "`, for instance with `to" <> name' <> "`."
 
 isSetterOrGetter :: Object -> Method -> Bool
 isSetterOrGetter o m =
@@ -372,27 +265,22 @@ genObject n o = -- do
                   "\" does not descend from GObject, it will be ignored."
     else do
       -- writeHaddock DocBeforeSymbol ("Memory-managed wrapper type.")
-      -- bline $ "newtype " <> name' <> " = " <> name' <> " (ManagedPtr " <> name' <> ")"
       -- newtypeDeriving
       -- exportDecl (name' <> "(..)")
 
       -- addSectionDocumentation ToplevelSection (objDocumentation o)
 
       -- Type safe casting to parent objects, and implemented interfaces.
-      -- parents <- instanceTree n
-      -- genGObjectCasts n (objTypeInit o) (parents <> objInterfaces o)
+      parents <- instanceTree n
+      genGObjectCasts n (objTypeInit o) (parents <> objInterfaces o)
 
       -- noName name'
 
-      -- cppIf CPPOverloading $
-      --     fullObjectMethodList n o >>= genMethodList n
       let nspace = namespace n
       let objectName = name n
 
       -- TODO: not sure
-      parents <- reverse . filter (not . T.isPrefixOf "Object" . name) <$> instanceTree n
-
-      cline $ "#define " <> nspace <> objectName <> "_val(" <> "val) check_cast(" <> T.toUpper (nspace <> "_" <> objectName) <> ", val)"
+      _parents <- reverse . filter (not . T.isPrefixOf "Object" . name) <$> instanceTree n
 
       gline "open GtkSignal"
       gline "open Gobject"
@@ -442,10 +330,6 @@ genObject n o = -- do
         line $ "let create pl : "
           <> nspace <> "." <> camelCaseToSnakeCase objectName <> " obj = Object.make "
           <> "\"" <> nspace <> objectName <> "\" pl"
-      -- cppIf CPPOverloading $
-      --     genNamespacedPropLabels n (objProperties o) (objMethods o)
-      -- cppIf CPPOverloading $
-      --     genObjectSignals n o
 
       -- Methods
       gblank
@@ -459,8 +343,6 @@ genObject n o = -- do
                                 <> name' <> "::" <> name mn <> " *)\n"
                                 <> "(* Error was : " <> describeCGError e <> " *)"))
                     (genMethod n f)
-                    -- >> (cppIf CPPOverloading $
-                    --         genUnsupportedMethodInfo n f))
       gline "end"
                     
 
@@ -471,7 +353,7 @@ genInterface n iface = do
   line $ "-- interface " <> name' <> " "
   writeHaddock DocBeforeSymbol ("Memory-managed wrapper type.")
   deprecatedPragma name' $ ifDeprecated iface
-  bline $ "newtype " <> name' <> " = " <> name' <> " (ManagedPtr " <> name' <> ")"
+
   newtypeDeriving
   exportDecl (name' <> "(..)")
 
@@ -485,9 +367,6 @@ genInterface n iface = do
                      , " *)\n", "(* Error was : "] <>) . describeCGError)
      (genSignal s n)
 
-  cppIf CPPOverloading $
-     genInterfaceSignals n iface
-
   isGO <- apiIsGObject n (APIInterface iface)
   if isGO
   then do
@@ -498,8 +377,6 @@ genInterface n iface = do
     genGObjectCasts n cn_ uniqueParents
 
     genInterfaceProperties n iface
-    cppIf CPPOverloading $
-       genNamespacedPropLabels n (ifProperties iface) (ifMethods iface)
 
   else group $ do
     cls <- classConstraint n
@@ -514,18 +391,12 @@ genInterface n iface = do
     -- since we sometimes need to refer to @IsX@ itself, without
     -- applying it. We instead use the trick of creating a class with
     -- a universal instance.
-    let constraints = "(ManagedPtrNewtype o, O.IsDescendantOf " <> name' <> " o)"
-    bline $ "class " <> constraints <> " => " <> cls <> " o"
-    bline $ "instance " <> constraints <> " => " <> cls <> " o"
 
     genWrappedPtr n (ifAllocationInfo iface) 0
 
-    when (not . null . ifProperties $ iface) $ group $ do
-       line $ "-- XXX Skipping property generation for non-GObject interface"
+    unless (null . ifProperties $ iface) $ group $
+       commentLine "XXX Skipping property generation for non-GObject interface"
 
-  -- Methods
-  cppIf CPPOverloading $
-       fullInterfaceMethodList n iface >>= genMethodList n
 
   forM_ (ifMethods iface) $ \f -> do
       let mn = methodName f
@@ -534,9 +405,7 @@ genInterface n iface = do
              handleCGExc
              (\e -> line ("(* Could not generate method "
                           <> name' <> "::" <> name mn <> " *)\n"
-                          <> "(* Error was : " <> describeCGError e <> " *)")
-             >> (cppIf CPPOverloading $
-                      genUnsupportedMethodInfo n f))
+                          <> "(* Error was : " <> describeCGError e <> " *)"))
              (genMethod n f)
 
 -- Some type libraries include spurious interface/struct methods,

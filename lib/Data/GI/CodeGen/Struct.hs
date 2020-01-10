@@ -13,7 +13,7 @@ import Control.Applicative ((<$>))
 #endif
 import Control.Monad (forM, when)
 
-import Data.Maybe (mapMaybe, isJust, catMaybes)
+import Data.Maybe (mapMaybe, isJust)
 #if !MIN_VERSION_base(4,11,0)
 import Data.Monoid ((<>))
 #endif
@@ -423,21 +423,14 @@ genStructOrUnionFields :: Name -> [Field] -> CodeGen ()
 genStructOrUnionFields n fields = do
   let name' = upperName n
 
-  attrs <- forM fields $ \field ->
+  _attrs <- forM fields $ \field ->
       handleCGExc (\e -> line ("-- XXX Skipped attribute for \"" <> name' <>
                                ":" <> fieldName field <> "\" :: " <>
                                describeCGError e) >>
                    return Nothing)
                   (buildFieldAttributes n field)
 
-  blank
-
-  cppIf CPPOverloading $ do
-    let attrListName = name' <> "AttributeList"
-    line $ "instance O.HasAttributeList " <> name'
-    line $ "type instance O.AttributeList " <> name' <> " = " <> attrListName
-    line $ "type " <> attrListName <> " = ('[ " <>
-         T.intercalate ", " (catMaybes attrs) <> "] :: [(Symbol, *)])"
+  return ()
 
 -- | Generate a constructor for a zero-filled struct/union of the given
 -- type, using the boxed (or GLib, for unboxed types) allocator.
@@ -543,4 +536,4 @@ genWrappedPtr n info size = group $ do
       line $ "wrappedPtrCopy = " <> copy
       line $ "wrappedPtrFree = " <> free
 
-  hsBoot $ line $ "instance WrappedPtr " <> name' <> " where"
+  line $ "instance WrappedPtr " <> name' <> " where"

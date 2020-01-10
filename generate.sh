@@ -26,21 +26,13 @@ fi
 runhaskell Setup.hs build
 runhaskell Setup.hs install
 
-# If the bindings haven't been generated yet
-if [ ! -d "./dist/$bindings_lib/dist" ]
-then
-    pushd bindings
-        rm -rf $bindings_lib/GI $bindings_lib/dist
-        cabal new-run genBuildInfo $bindings_lib
-        pushd $bindings_lib
-            cabal v1-install
-        popd
+pushd bindings
+    rm -rf $bindings_lib/GI $bindings_lib/dist
+    cabal new-run genBuildInfo $bindings_lib
+    pushd $bindings_lib
+        cabal v1-build
     popd
-    cp ./base-ocaml/ocaml/* "./bindings/$bindings_lib/GI/Gtk/Objects/"
-    cp ./base-ocaml/c/* "./bindings/$bindings_lib/GI/Gtk/Objects/"
-    cp -r ./base-ocaml/tools "./bindings/$bindings_lib/GI/"
-fi
-
-# pushd bindings/$bindings_lib
-#     rm -rf GI dist; cabal v1-build
-# popd
+popd
+cp ./base-ocaml/ocaml/* "./bindings/$bindings_lib/GI/Gtk/Objects/"
+cp ./base-ocaml/c/* "./bindings/$bindings_lib/GI/Gtk/Objects/"
+cp -r ./base-ocaml/tools "./bindings/$bindings_lib/GI/"

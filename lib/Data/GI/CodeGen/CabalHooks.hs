@@ -79,7 +79,7 @@ genModuleCode name version verbosity overrides = do
 -- | Write a module containing information about the configuration for
 -- the package.
 genConfigModule :: Maybe FilePath -> Text -> Maybe TaggedOverride -> IO ()
-genConfigModule outputDir modName maybeGiven = do
+genConfigModule outputDir _modName _maybeGiven = do
   -- let fname = joinPath [ fromMaybe "" outputDir
   --                      , "GI"
   --                      , T.unpack (ucFirst modName)

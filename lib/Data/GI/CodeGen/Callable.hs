@@ -20,7 +20,7 @@ module Data.GI.CodeGen.Callable
     , genMlMacro
     ) where
 
-import Control.Monad (forM, forM_, when, void)
+import Control.Monad (forM, forM_, when)
 import Data.Bool (bool)
 import Data.List (nub)
 import Data.Maybe (isJust)
@@ -35,8 +35,7 @@ import Data.Text (Text)
 import Data.GI.CodeGen.API
 import Data.GI.CodeGen.Code
 import Data.GI.CodeGen.Conversions
-import Data.GI.CodeGen.Haddock (deprecatedPragma, writeHaddock,
-                                writeDocumentation, RelativeDocPosition(..),
+import Data.GI.CodeGen.Haddock (writeHaddock, RelativeDocPosition(..),
                                 writeArgDocumentation, writeReturnDocumentation)
 import Data.GI.CodeGen.SymbolNaming
 import Data.GI.CodeGen.Transfer
@@ -44,7 +43,6 @@ import Data.GI.CodeGen.Type
 import Data.GI.CodeGen.Util
 
 import Text.Show.Pretty (ppShow)
-import Debug.Trace
 
 hOutType :: Callable -> [Arg] -> ExcCodeGen TypeRep
 hOutType callable outArgs = do
@@ -814,26 +812,6 @@ genHaskellWrapper n symbol callable expose = group $ do
     indent (genWrapperBody n symbol callable hInArgs hOutArgs omitted expose)
     return name
 
--- | Generate a Haskell wrapper for the given foreign function.
-genOCamlWrapper :: Name -> ForeignSymbol -> Callable ->
-                     ExposeClosures -> ExcCodeGen Text
-genOCamlWrapper n symbol callable expose = group $ do
-    let name = case symbol of
-                 KnownForeignSymbol _ -> lowerName n
-                 DynamicForeignSymbol _ -> callbackDynamicWrapper (upperName n)
-        (hInArgs, omitted) = callableHInArgs callable expose
-        hOutArgs = callableHOutArgs callable
-
-    line $ name <> " ::"
-    formatHSignature callable symbol expose
-    let argNames = case symbol of
-                     KnownForeignSymbol _ -> map escapedArgName hInArgs
-                     DynamicForeignSymbol _ ->
-                         funPtr : map escapedArgName hInArgs
-    line $ name <> " " <> T.intercalate " " argNames <> " = liftIO $ do"
-    indent (genWrapperBody n symbol callable hInArgs hOutArgs omitted expose)
-    return name
-
 -- | Generate the body of the Haskell wrapper for the given foreign symbol.
 genWrapperBody :: Name -> ForeignSymbol -> Callable ->
                   [Arg] -> [Arg] -> [Arg] ->
@@ -931,8 +909,8 @@ data DynamicWrapper = DynamicWrapper {
     }
 
 -- | Some debug info for the callable.
-genCallableDebugInfo :: Callable -> CodeGen ()
-genCallableDebugInfo callable =
+_genCallableDebugInfo :: Callable -> CodeGen ()
+_genCallableDebugInfo callable =
     group $ do
       commentShow "Args" (args callable)
       commentShow "Lengths" (arrayLengths callable)

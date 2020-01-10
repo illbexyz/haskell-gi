@@ -32,7 +32,6 @@ module Data.GI.CodeGen.Code
     , indent
     , gindent
     , increaseIndent
-    , bline
     , line
     , cline
     , gline
@@ -43,7 +42,6 @@ module Data.GI.CodeGen.Code
     , ggroup
     , cppIf
     , CPPGuard(..)
-    , hsBoot
     , submodule
     , setLanguagePragmas
     , addLanguagePragma
@@ -592,11 +590,6 @@ gline = tellGCode . Line
 commentLine :: Text -> CodeGen ()
 commentLine t = line $ "(* " <> t <> " *)" 
 
--- | Print out the given line both to the normal module, and to the
--- HsBoot file.
-bline :: Text -> CodeGen ()
-bline l = hsBoot (line l) >> line l
-
 -- | A blank line
 blank :: CodeGen ()
 blank = line ""
@@ -663,17 +656,6 @@ cBoot cg = do
   (x, code) <- recurseCG cg
   modify' (\(cgs, s) -> (cgs, s {cCode = cCode s <> code}))
   return x
-
--- | Write the given code into the .hs-boot file for the current module.
-hsBoot :: BaseCodeGen e a -> BaseCodeGen e a
-hsBoot cg = do
-  (x, code) <- recurseCG cg
-  modify' (\(cgs, s) -> (cgs, s{bootCode = bootCode s <>
-                               addGuards (cgsCPPConditionals cgs) code}))
-  return x
-  where addGuards :: [CPPConditional] -> Code -> Code
-        addGuards [] c = c
-        addGuards (cond : conds) c = codeSingleton $ CPPBlock cond (addGuards conds c)
 
 -- | Add a export to the current module.
 exportPartial :: ([CPPConditional] -> Export) -> CodeGen ()
@@ -883,13 +865,6 @@ ghcOptions :: [Text] -> Text
 ghcOptions [] = ""
 ghcOptions opts = "{-# OPTIONS_GHC " <> T.intercalate ", " opts <> " #-}\n"
 
--- | Generate some convenience CPP macros.
-cppMacros :: Text
-cppMacros = T.unlines
-  ["#if (MIN_VERSION_haskell_gi_overloading(1,0,0) && !defined(__HADDOCK_VERSION__))"
-  , "#define ENABLE_OVERLOADING"
-  , "#endif"]
-
 -- | Standard fields for every module.
 standardFields :: Text
 standardFields = T.unlines [ "Copyright  : " <> authors
@@ -998,23 +973,23 @@ dotWithPrefix mp = dotModulePath ("GI" <> mp)
 -- `writeModuleTree`.
 writeModuleInfo :: Bool -> Maybe FilePath -> ModuleInfo -> IO ()
 writeModuleInfo verbose dirPrefix minfo = do
-  let submodulePaths = map (modulePath) (M.elems (submodules minfo))
+  let _submodulePaths = map (modulePath) (M.elems (submodules minfo))
       -- We reexport any submodules.
-      submoduleExports = map dotWithPrefix submodulePaths
+      _submoduleExports = map dotWithPrefix _submodulePaths
       fname = modulePathToFilePath dirPrefix (modulePath minfo) ".ml"
       dirname = takeDirectory fname
       code = codeToText (moduleCode minfo)
-      pragmas = languagePragmas (Set.toList $ modulePragmas minfo)
-      optionsGHC = ghcOptions (Set.toList $ moduleGHCOpts minfo)
-      prelude = modulePrelude (sectionDocs minfo)
+      _pragmas = languagePragmas (Set.toList $ modulePragmas minfo)
+      _optionsGHC = ghcOptions (Set.toList $ moduleGHCOpts minfo)
+      _prelude = modulePrelude (sectionDocs minfo)
                 (dotWithPrefix $ modulePath minfo)
                 (F.toList (moduleExports minfo))
-                submoduleExports
-      imports = if ImplicitPrelude `Set.member` moduleFlags minfo
+                _submoduleExports
+      _imports = if ImplicitPrelude `Set.member` moduleFlags minfo
                 then ""
                 else moduleImports
-      pkgRoot = ModulePath (take 1 (modulePathToList $ modulePath minfo))
-      deps = importDeps pkgRoot (Set.toList $ qualifiedImports minfo)
+      _pkgRoot = ModulePath (take 1 (modulePathToList $ modulePath minfo))
+      _deps = importDeps _pkgRoot (Set.toList $ qualifiedImports minfo)
       haddock = moduleHaddock (M.lookup ToplevelSection (sectionDocs minfo))
 
   when verbose $ putStrLn ((T.unpack . dotWithPrefix . modulePath) minfo
@@ -1024,9 +999,6 @@ writeModuleInfo verbose dirPrefix minfo = do
   --                                prelude, imports, deps, code])
   utf8WriteFile fname (T.unlines [haddock, code])
 
-  -- when (not . isCodeEmpty $ bootCode minfo) $ do
-  --   let bootFName = modulePathToFilePath dirPrefix (modulePath minfo) ".hs-boot"
-  --   utf8WriteFile bootFName (genHsBoot minfo)
   unless (isCodeEmpty $ cCode minfo) $ do
     let cStubsFile = modulePathToFilePath dirPrefix (modulePath minfo) ".c"
     utf8WriteFile cStubsFile (T.unlines [cOCamlModuleImports, genCStubs minfo])
@@ -1035,14 +1007,6 @@ writeModuleInfo verbose dirPrefix minfo = do
     let gFileModulePath = addNamePrefix "g" (modulePath minfo)
     let gModuleFile = modulePathToFilePath dirPrefix gFileModulePath ".ml"
     utf8WriteFile gModuleFile (T.unlines [genGModule minfo])
-
--- | Generate the .hs-boot file for the given module.
-genHsBoot :: ModuleInfo -> Text
-genHsBoot minfo =
-    cppMacros <>
-    "module " <> (dotWithPrefix . modulePath) minfo <> " where\n\n" <>
-    moduleImports <> "\n" <>
-    codeToText (bootCode minfo)
 
 -- | Generate the .hs-boot file for the given module.
 genCStubs :: ModuleInfo -> Text

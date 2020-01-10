@@ -17,67 +17,20 @@ import Data.Text (Text)
 import Text.Show.Pretty (ppShow)
 
 import Data.GI.CodeGen.API
-import Data.GI.CodeGen.Callable (hOutType, wrapMaybe,
+import Data.GI.CodeGen.Callable (wrapMaybe,
                                  fixupCallerAllocates,
                                  genDynamicCallableWrapper,
                                  callableHInArgs, callableHOutArgs)
 import Data.GI.CodeGen.Code
 import Data.GI.CodeGen.Conversions
-import Data.GI.CodeGen.Haddock (deprecatedPragma,
-                                RelativeDocPosition(..), writeHaddock,
-                                writeDocumentation,
-                                writeArgDocumentation, writeReturnDocumentation)
+import Data.GI.CodeGen.Haddock (deprecatedPragma, RelativeDocPosition(..),
+                                writeHaddock)
 import Data.GI.CodeGen.SymbolNaming
 import Data.GI.CodeGen.Transfer (freeContainerType)
 import Data.GI.CodeGen.Type
 import Data.GI.CodeGen.Util (parenthesize, withComment, tshow, terror,
-                             lcFirst, ucFirst, prime)
+                             ucFirst, prime)
 import Data.GI.GIR.Documentation (Documentation)
-import Debug.Trace
-
--- | The prototype of the callback on the Haskell side (what users of
--- the binding will see)
-genHaskellCallbackPrototype :: Text -> Callable -> Text -> ExposeClosures ->
-                               Documentation -> ExcCodeGen ()
-genHaskellCallbackPrototype subsec cb htype expose doc = group $ do
-    let name' = case expose of
-                  WithClosures -> callbackHTypeWithClosures htype
-                  WithoutClosures -> htype
-        (hInArgs, _) = callableHInArgs cb expose
-        inArgsWithArrows = zip ("" : repeat "-> ") hInArgs
-        hOutArgs = callableHOutArgs cb
-
-    export (NamedSubsection SignalSection subsec) name'
-    writeDocumentation DocBeforeSymbol doc
-    line $ "type " <> name' <> " ="
-    indent $ do
-      forM_ inArgsWithArrows $ \(arrow, arg) -> do
-        ht <- isoHaskellType (argType arg)
-        isMaybe <- wrapMaybe arg
-        let formattedType = if isMaybe
-                            then typeShow (maybeT ht)
-                            else typeShow ht
-        line $ arrow <> formattedType
-        writeArgDocumentation arg
-      ret <- hOutType cb hOutArgs
-      let returnArrow = if null hInArgs
-                        then ""
-                        else "-> "
-      line $ returnArrow <> typeShow (io ret)
-      writeReturnDocumentation cb False
-
-    blank
-
-    -- For optional parameters, in case we want to pass Nothing.
-    export (NamedSubsection SignalSection subsec) ("no" <> name')
-    writeHaddock DocBeforeSymbol (noCallbackDoc name')
-    line $ "no" <> name' <> " :: Maybe " <> name'
-    line $ "no" <> name' <> " = Nothing"
-
-  where noCallbackDoc :: Text -> Text
-        noCallbackDoc typeName =
-          "A convenience synonym for @`Nothing` :: `Maybe` `" <> typeName <>
-          "`@."
 
 argsTypeRep :: [Arg] -> ExcCodeGen [Text]
 argsTypeRep = mapM (ocamlDataConv . argType)
@@ -96,18 +49,18 @@ ocamlMarshaller args sigName onName = case args of
 -- the binding will see)
 genOCamlCallbackPrototype :: Text -> Callable -> Text -> Text ->
                                ExposeClosures -> Documentation -> ExcCodeGen ()
-genOCamlCallbackPrototype subsec cb htype classe expose doc = do
-    let name' = case expose of
-                  WithClosures -> callbackHTypeWithClosures htype
-                  WithoutClosures -> htype
-        (hInArgs, _) = callableHInArgs cb expose
-        inArgsWithArrows = zip ("" : repeat "-> ") hInArgs
-        hOutArgs = callableHOutArgs cb
+genOCamlCallbackPrototype subsec cb _htype classe expose _doc = do
+    -- let name' = case expose of
+    --               WithClosures -> callbackHTypeWithClosures htype
+    --               WithoutClosures -> htype
+    let (hInArgs, _) = callableHInArgs cb expose
+        -- inArgsWithArrows = zip ("" : repeat "-> ") hInArgs
+        -- hOutArgs = callableHOutArgs cb
 
     -- export (NamedSubsection SignalSection subsec) name'
     -- writeDocumentation DocBeforeSymbol doc
 
-    ret <- hOutType cb hOutArgs
+    -- ret <- hOutType cb hOutArgs
     marshaller <- ocamlMarshaller hInArgs subsec classe
 
     line $ "let " <> subsec <> " = {"
@@ -178,19 +131,6 @@ genCCallbackPrototype subsec cb name' isSignal = group $ do
   where
     ccallbackDoc :: Text
     ccallbackDoc = "Type for the callback on the (unwrapped) C side."
-
--- | Generate the type synonym for the prototype of the callback on
--- the C side. Returns the name given to the type synonym.
-genCOCamlCallbackPrototype :: Text -> Callable -> Text -> Text -> Text -> Bool -> CodeGen ()
-genCOCamlCallbackPrototype subsec cb name' classe nspace isSignal = group $ do
-    let cname = T.toLower nspace <> "_" <> T.toLower classe <> "_" <> subsec
-    let valFunc = T.toTitle nspace <> T.toTitle classe <> "_val"
-    -- TODO: Use the correct ML_X
-    cline $ "ML_1 ("
-      <> cname <> ", "
-      <> valFunc <> ", "
-      <> "Unit" -- TODO: Use the correct type
-      <> ")"
 
   --   let ctypeName = callbackCType name'
 
@@ -441,7 +381,7 @@ genCallbackWrapper subsec cb name' isSignal = group $ do
                line $ "return " <> result'
 
 genCallback :: Name -> Callback -> CodeGen ()
-genCallback n (Callback {cbCallable = cb, cbDocumentation = cbDoc }) = do
+genCallback n (Callback {cbCallable = cb, cbDocumentation = _cbDoc }) = do
   let name' = upperName n
   line $ "-- callback " <> name'
   line $ "--          -> " <> tshow (fixupCallerAllocates cb)
@@ -491,22 +431,6 @@ genCallback n (Callback {cbCallable = cb, cbDocumentation = cbDoc }) = do
         genClosure name' cb' name' name' False
         genCallbackWrapper name' cb' name' False
 
--- | Generate the given signal instance for the given API object.
-genSignalInfoInstance :: Name -> Signal -> CodeGen ()
-genSignalInfoInstance owner signal = group $ do
-  let name = upperName owner
-  let sn = (ucFirst . signalHaskellName . sigName) signal
-  si <- signalInfoName owner signal
-  bline $ "data " <> si
-  line $ "instance SignalInfo " <> si <> " where"
-  indent $ do
-      let signalConnectorName = name <> sn
-          cbHaskellType = signalConnectorName <> "Callback"
-      line $ "type HaskellCallbackType " <> si <> " = " <> cbHaskellType
-      line $ "connectSignal obj cb connectMode detail = do"
-      indent $ genSignalConnector signal cbHaskellType "connectMode" "detail"
-  export (NamedSubsection SignalSection $ lcFirst sn) si
-
 -- | Write some simple debug message when signal generation fails, and
 -- generate a placeholder SignalInfo instance.
 processSignalError :: Signal -> Name -> CGError -> CodeGen ()
@@ -517,29 +441,12 @@ processSignalError signal owner err = do
                   , qualifiedSignalName
                   , " *)\n", "(* Error was : ", describeCGError err, " *)"]
 
-  -- Generate a placeholder SignalInfo instance that raises a type
-  -- error when one attempts to use it.
-  -- cppIf CPPOverloading $ group $ do
-  --   si <- signalInfoName owner signal
-  --   bline $ "data " <> si
-  --   line $ "instance SignalInfo " <> si <> " where"
-  --   indent $ do
-  --     line $ "type HaskellCallbackType " <> si <>
-  --       " = B.Signals.SignalCodeGenError \"" <> qualifiedSignalName <> "\""
-  --     line $ "connectSignal = undefined"
-  --   export (NamedSubsection SignalSection $ lcFirst sn) si
-
 -- | Generate a wrapper for a signal.
 genSignal :: Signal -> Name -> CodeGen ()
-genSignal s@(Signal { sigName = sn, sigCallable = cb }) on =
+genSignal s@Signal { sigName = sn, sigCallable = cb } on =
   handleCGExc (processSignalError s on) $ do
   let classe = lowerName on
-      nspace = namespace on
-
-  -- TODO: uncomment next line
-  -- commentLine $ "signal " <> on' <> "::" <> sn
-
-  let sn' = signalOCamlName sn
+      sn' = signalOCamlName sn
       signalConnectorName = classe <> ucFirst sn'
       cbType = signalConnectorName <> "Callback"
       -- docSection = NamedSubsection SignalSection $ lcFirst sn'
@@ -547,7 +454,6 @@ genSignal s@(Signal { sigName = sn, sigCallable = cb }) on =
   -- deprecatedPragma cbType (callableDeprecated cb)
 
   genOCamlCallbackPrototype sn' cb cbType classe WithoutClosures (sigDoc s)
-  -- genCOCamlCallbackPrototype sn' cb cbType classe nspace True
 
   -- genCallbackWrapperFactory (lcFirst sn') cbType
 
@@ -558,99 +464,3 @@ genSignal s@(Signal { sigName = sn, sigCallable = cb }) on =
   --   else do
   --     genClosure (lcFirst sn') cb cbType signalConnectorName True
   --     genCallbackWrapper (lcFirst sn') cb cbType True
-
-  -- -- Wrapper for connecting functions to the signal
-  -- -- We can connect to a signal either before the default handler runs
-  -- -- ("on...") or after the default handler runs (after...). We
-  -- -- provide convenient wrappers for both cases.
-  -- group $ do
-  --   -- Notice that we do not include GObject here as a constraint,
-  --   -- since if something provides signals it is necessarily a
-  --   -- GObject.
-  --   klass <- classConstraint on
-  --   let signatureConstraints = "(" <> klass <> " a, MonadIO m) =>"
-  --       signatureArgs = if sigDetailed s
-  --         then "a -> P.Maybe T.Text -> " <> cbType <> " -> m SignalHandlerId"
-  --         else "a -> " <> cbType <> " -> m SignalHandlerId"
-  --       signature = " :: " <> signatureConstraints <> " " <> signatureArgs
-  --       onName = "on" <> signalConnectorName
-  --       afterName = "after" <> signalConnectorName
-
-  --   group $ do
-  --     writeHaddock DocBeforeSymbol onDoc
-  --     line $ onName <> signature
-  --     if sigDetailed s
-  --       then do
-  --       line $ onName <> " obj detail cb = liftIO $ do"
-  --       indent $ genSignalConnector s cbType "SignalConnectBefore" "detail"
-  --       else do
-  --       line $ onName <> " obj cb = liftIO $ do"
-  --       indent $ genSignalConnector s cbType "SignalConnectBefore" "Nothing"
-  --     export docSection onName
-
-  --   group $ do
-  --     writeHaddock DocBeforeSymbol afterDoc
-  --     line $ afterName <> signature
-  --     if sigDetailed s
-  --       then do
-  --       line $ afterName <> " obj detail cb = liftIO $ do"
-  --       indent $ genSignalConnector s cbType "SignalConnectAfter" "detail"
-  --       else do
-  --       line $ afterName <> " obj cb = liftIO $ do"
-  --       indent $ genSignalConnector s cbType "SignalConnectAfter" "Nothing"
-  --     export docSection afterName
-
-  -- cppIf CPPOverloading (genSignalInfoInstance on s)
-
-  -- where
-  --   onDoc :: Text
-  --   onDoc = let hsn = signalHaskellName sn
-  --           in T.unlines [
-  --     "Connect a signal handler for the [" <> hsn <> "](#signal:" <> hsn <>
-  --       ") signal, to be run before the default handler."
-  --     , "When <https://github.com/haskell-gi/haskell-gi/wiki/Overloading overloading> is enabled, this is equivalent to"
-  --     , ""
-  --     , "@"
-  --     , "'Data.GI.Base.Signals.on' " <> lowerName on <> " #"
-  --       <> hsn <> " callback"
-  --     , "@"
-  --     , ""
-  --     , detailedDoc ]
-
-  --   afterDoc :: Text
-  --   afterDoc = let hsn = signalHaskellName sn
-  --              in T.unlines [
-  --     "Connect a signal handler for the [" <> hsn <> "](#signal:" <> hsn <>
-  --       ") signal, to be run after the default handler."
-  --     , "When <https://github.com/haskell-gi/haskell-gi/wiki/Overloading overloading> is enabled, this is equivalent to"
-  --     , ""
-  --     , "@"
-  --     , "'Data.GI.Base.Signals.after' " <> lowerName on <> " #"
-  --       <> hsn <> " callback"
-  --     , "@"
-  --     , ""
-  --     , detailedDoc ]
-
-  --   detailedDoc :: Text
-  --   detailedDoc = if not (sigDetailed s)
-  --                 then ""
-  --                 else T.unlines [
-  --     "This signal admits a optional parameter @detail@."
-  --     , "If it's not @Nothing@, we will connect to “@" <> sn
-  --       <> "::detail@” instead."
-  --     ]
-
-
--- | Generate the code for connecting the given signal. This assumes
--- that it lives inside a @do@ block.
-genSignalConnector :: Signal
-                   -> Text -- ^ Callback type
-                   -> Text -- ^ SignalConnectBefore or SignalConnectAfter
-                   -> Text -- ^ Detail
-                   -> CodeGen ()
-genSignalConnector (Signal {sigName = sn, sigCallable = cb}) cbType when detail = do
-  cb' <- genWrappedCallback cb "cb" cbType True
-  let cb'' = prime cb'
-  line $ cb'' <> " <- " <> callbackWrapperAllocator cbType <> " " <> cb'
-  line $ "connectSignalFunPtr obj \"" <> sn <> "\" " <> cb'' <> " " <> when
-          <> " " <> detail
