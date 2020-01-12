@@ -917,7 +917,7 @@ haskellType t@(TInterface n) = do
   return $ case api of
              (APIFlags _) -> "[]" `con` [tname `con` []]
              APIEnum _enum -> (T.toTitle (namespace n) <> "Enums." <> ocamlName) `con` []
-             _ -> obj $ poly $ T.toLower tname `con` []
+             _ -> obj $ polyMore $ T.toLower tname `con` [] -- TODO: not sure it is objMore
 
 -- | Whether the callable has closure arguments (i.e. "user_data"
 -- style arguments).
@@ -1201,7 +1201,7 @@ outParamOcamlType t@(TInterface n) = do
   return $ case api of
              (APIFlags _) -> "[]" `con` [tname `con` []]
              APIEnum _enum -> (T.toTitle (namespace n) <> "Enums." <> ocamlName) `con` []
-             _ -> obj $ ("[<`" <> T.toLower tname <> "]") `con` []
+             _ -> obj $ polyLess $ con0 $ T.toLower tname
 
 -- Type to data_conv
 ocamlDataConv :: Type -> ExcCodeGen Text

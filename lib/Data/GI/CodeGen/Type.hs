@@ -11,6 +11,7 @@ module Data.GI.CodeGen.Type
     , con0
 
     , typeShow
+    , typeShowPolyToAlpha
     , typeConName
 
     , io
@@ -18,8 +19,11 @@ module Data.GI.CodeGen.Type
     , funptr
     , maybeT
     , poly
+    , polyMore
+    , polyLess
     , obj
     , option
+    , tuple
     ) where
 
 #if !MIN_VERSION_base(4,11,0)
@@ -35,12 +39,17 @@ data TypeRep = TypeRep { typeCon     :: TypeCon
                        , typeConArgs :: [TypeRep]
                        } deriving (Eq)
 
+data PolyDirection = Less
+                   | More
+                   | Exact
+  deriving (Eq)
+
 -- | A type constructor. We single out some specific constructors
 -- since they have special syntax in their Haskell representation.
 data TypeCon = TupleCon
              | ListCon
              | OptionCon
-             | PolyCon
+             | PolyCon PolyDirection
              | ObjCon
              | TextualCon Text
   deriving (Eq)
@@ -54,12 +63,40 @@ typeShow (TypeRep ListCon args) =
   "[" <> T.intercalate ", " (map typeShow args) <> "]"
 typeShow (TypeRep OptionCon args) =
   T.concat (map typeShow args) <> " option"
-typeShow (TypeRep PolyCon args) =
+typeShow (TypeRep (PolyCon More) args) =
   "[>`" <> T.intercalate ", " (map typeShow args) <> "]"
+typeShow (TypeRep (PolyCon Less) args) =
+  "[<`" <> T.intercalate ", " (map typeShow args) <> "]"
+typeShow (TypeRep (PolyCon Exact) args) =
+  "`" <> T.concat (map typeShow args)
 typeShow (TypeRep ObjCon args) =
   T.concat (map typeShow args) <> " obj"
 typeShow (TypeRep (TextualCon con) args) =
   T.intercalate " " (con : map (parenthesize . typeShow) args)
+  where parenthesize :: Text -> Text
+        parenthesize s = if T.any (== ' ') s
+                         then "(" <> s <> ")"
+                         else s
+
+-- TODO: I don't like the repetition of the function
+--       at all, investigate an alternative
+typeShowPolyToAlpha :: TypeRep -> Text
+typeShowPolyToAlpha (TypeRep TupleCon args) =
+  "(" <> T.intercalate ", " (map typeShowPolyToAlpha args) <> ")"
+typeShowPolyToAlpha (TypeRep ListCon args) =
+  "[" <> T.intercalate ", " (map typeShowPolyToAlpha args) <> "]"
+typeShowPolyToAlpha (TypeRep OptionCon args) =
+  T.concat (map typeShowPolyToAlpha args) <> " option"
+typeShowPolyToAlpha (TypeRep (PolyCon More) args) =
+  "'a.([>`" <> T.intercalate ", " (map typeShowPolyToAlpha args) <> "] as 'a)"
+typeShowPolyToAlpha (TypeRep (PolyCon Less) args) =
+  "'a.([<`" <> T.intercalate ", " (map typeShowPolyToAlpha args) <> "] as 'a)"
+typeShowPolyToAlpha (TypeRep (PolyCon Exact) args) =
+  "`" <> T.concat (map typeShowPolyToAlpha args)
+typeShowPolyToAlpha (TypeRep ObjCon args) =
+  T.concat (map typeShowPolyToAlpha args) <> " obj"
+typeShowPolyToAlpha (TypeRep (TextualCon con) args) =
+  T.intercalate " " (con : map (parenthesize . typeShowPolyToAlpha) args)
   where parenthesize :: Text -> Text
         parenthesize s = if T.any (== ' ') s
                          then "(" <> s <> ")"
@@ -71,7 +108,9 @@ typeConName :: TypeRep -> Text
 typeConName (TypeRep TupleCon _) = "(,)"
 typeConName (TypeRep ListCon _) = "[,]"
 typeConName (TypeRep OptionCon _) = "option"
-typeConName (TypeRep PolyCon _) = "[>`]"
+typeConName (TypeRep (PolyCon More) _) = "[`>]"
+typeConName (TypeRep (PolyCon Less) _) = "[`<]"
+typeConName (TypeRep (PolyCon Exact) _) = "`"
 typeConName (TypeRep ObjCon _) = "obj"
 typeConName (TypeRep (TextualCon s) _) = s
 
@@ -80,7 +119,9 @@ con :: Text -> [TypeRep] -> TypeRep
 con "[]" xs = TypeRep {typeCon = ListCon, typeConArgs = xs }
 con "(,)" xs = TypeRep {typeCon = TupleCon, typeConArgs = xs }
 con "option" xs = TypeRep {typeCon = OptionCon, typeConArgs = xs }
-con "[>`]" xs = TypeRep {typeCon = PolyCon, typeConArgs = xs }
+con "[>`]" xs = TypeRep {typeCon = PolyCon More, typeConArgs = xs }
+con "[<`]" xs = TypeRep {typeCon = PolyCon Less, typeConArgs = xs }
+con "`" xs = TypeRep {typeCon = PolyCon Exact, typeConArgs = xs }
 con "obj" xs = TypeRep {typeCon = ObjCon, typeConArgs = xs }
 con s xs = TypeRep {typeCon = TextualCon s, typeConArgs = xs}
 
@@ -108,9 +149,19 @@ maybeT t =  "option" `con` [t]
 option :: TypeRep -> TypeRep
 option t =  "option" `con` [t]
 
--- | Embed in a polymorphic variant
 poly :: TypeRep -> TypeRep
-poly t = "[>`]" `con` [t]
+poly t = "`" `con` [t]
+
+-- | Embed in a polymorphic variant
+polyMore :: TypeRep -> TypeRep
+polyMore t = "[>`]" `con` [t]
+
+-- | Embed in a polymorphic variant
+polyLess :: TypeRep -> TypeRep
+polyLess t = "[<`]" `con` [t]
 
 obj :: TypeRep -> TypeRep
 obj t = "obj" `con` [t]
+
+tuple :: [TypeRep] -> TypeRep
+tuple t = "(,)" `con` t

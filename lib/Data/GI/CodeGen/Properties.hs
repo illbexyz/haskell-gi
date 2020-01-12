@@ -37,7 +37,7 @@ genPropertyOCaml :: Name -> Property -> ExcCodeGen ()
 genPropertyOCaml classe prop = do
   let pName = propName prop
       uScoresName = hyphensToUnderscores pName
-      classType = typeShow $ poly $ con0 $ T.toLower $ lowerName classe
+      classType = typeShow $ polyMore $ con0 $ T.toLower $ lowerName classe
   -- TODO: uncomment next line
   -- writeHaddock DocBeforeSymbol (getterDoc n prop) 
   ocamlConverter <- ocamlDataConv $ propType prop

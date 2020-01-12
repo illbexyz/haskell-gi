@@ -14,13 +14,15 @@ module Data.GI.CodeGen.Callable
 
     , callableHInArgs
     , callableHOutArgs
+    , callableReturnShow
+    , callableOCamlTypes
 
     , wrapMaybe
     , inArgInterfaces
     , genMlMacro
     ) where
 
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM, forM_, when, zipWithM)
 import Data.Bool (bool)
 import Data.List (nub)
 import Data.Maybe (isJust)
@@ -66,6 +68,11 @@ hOutType callable outArgs = do
              (_, "()") -> "(,)" `con` hOutArgTypes
              _         -> "(,)" `con` (maybeHReturnType : hOutArgTypes)
 
+callableReturnShow :: Callable -> CodeGen Text
+callableReturnShow c = typeShow <$> case returnType c of
+                                      Nothing -> return $ con0 "unit"
+                                      Just r  -> outParamOcamlType r
+
 -- | Generate a foreign import for the given C symbol. Return the name
 -- of the corresponding Haskell identifier.
 mkForeignImport :: Name -> Text -> Callable -> CodeGen Text
@@ -79,7 +86,7 @@ mkForeignImport mn cSymbol callable = do
         -- TODO: Handle exceptions in some way
         -- when (callableThrows callable) $
         --        line $ padTo 40 "Ptr (Ptr GError) -> " <> "-- error"
-        line =<< last
+        line =<< (callableReturnShow callable)
         line $ "= \"ml_" <> cSymbol <> "\""
     return hSymbol
     where
@@ -91,25 +98,27 @@ mkForeignImport mn cSymbol callable = do
         ocamlType <- haskellType $ argType arg
         
         let ocamlType' = if mayBeNull arg then option ocamlType else ocamlType
-
-        -- ft <- foreignType $ argType arg
-        -- let ft' = if direction arg == DirectionIn || argCallerAllocates arg
-        --           then ft
-        --           else ptr ft
-        let start = typeShow ocamlType' <> " -> "
+            start = typeShow ocamlType' <> " -> "
+            
         return $ padTo 40 start <> "(* " <> argCName arg
                    <> " : " <> tshow (argType arg) <> " *)"
-    last = typeShow <$> case returnType callable of
-                                 Nothing -> return $ con0 "unit"
-                                 Just r  -> outParamOcamlType r
+
+foreignArgConverter :: Integer -> Arg -> ExcCodeGen Text
+foreignArgConverter i a = do
+  -- TODO: probably NULL isn't always the right default value
+  --       but it depends on the type of the arg
+  conv <- ocamlValueToC $ argType a
+  return $ if mayBeNull a
+    then optionVal i conv "NULL"
+    else conv
+  where optionVal argNum justConv nothingVal = "Option_val(arg" <> T.pack (show argNum) <> ", " <> justConv <> ", " <> nothingVal <> ")"
 
 genMlMacro :: Text -> Callable -> ExcCodeGen ()
 genMlMacro cSymbol callable = do
   let nArgs = T.pack $ show $ length $ args callable
   let macroName = "ML_" <> nArgs <> " ("
   retTypeName <- cToOCamlValue $ returnType callable
-  -- TODO: Handle option
-  argsTypes   <- mapM (ocamlValueToC . argType) (args callable)
+  argsTypes   <- zipWithM foreignArgConverter [1 ..] (args callable)
   let macroArgs = T.intercalate ", " (cSymbol : argsTypes ++ [retTypeName])
   cline $ macroName <> macroArgs <> ")"
 
@@ -652,11 +661,35 @@ callableHInArgs callable expose =
                     WithClosures -> arrayLengths callable
     in (filter (`notElem` omitted) inArgs, omitted)
 
+callableHInArgs' :: Callable -> [Arg]
+callableHInArgs' c =
+  filter (\a -> direction a /= DirectionOut) (args c)
+
 -- | "Out" arguments for the given callable on the Haskell side.
 callableHOutArgs :: Callable -> [Arg]
 callableHOutArgs callable =
     let outArgs = filter ((/= DirectionIn) . direction) $ args callable
     in filter (`notElem` (arrayLengths callable)) outArgs
+
+callableOCamlTypes :: Callable -> CodeGen [TypeRep]
+callableOCamlTypes c = do
+  inArgs  <- mapM argToTyperep $ callableHInArgs' c
+  outArgs <- mapM argToTyperep $ callableHOutArgs c
+  retType <- case returnType c of
+               Nothing -> return $ con0 "unit"
+               Just t  -> outParamOcamlType t
+
+  let outArgs' = case outArgs of 
+                   [] -> retType
+                   _  -> tuple $ retType : outArgs
+
+  return $ inArgs ++ [outArgs']
+
+  where argToTyperep a = do
+          ocamlType <- haskellType $ argType a
+          return $ if mayBeNull a
+                     then option ocamlType
+                     else ocamlType
 
 -- | Convert the result of the foreign call to Haskell.
 convertResult :: Name -> Callable -> Map.Map Text Text ->

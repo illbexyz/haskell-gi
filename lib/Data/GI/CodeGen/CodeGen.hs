@@ -15,7 +15,7 @@ import qualified Data.Text as T
 import Data.Text (Text)
 
 import Data.GI.CodeGen.API
-import Data.GI.CodeGen.Callable (genCCallableWrapper)
+import Data.GI.CodeGen.Callable (genCCallableWrapper, callableOCamlTypes)
 import Data.GI.CodeGen.Constant (genConstant)
 import Data.GI.CodeGen.Code
 import Data.GI.CodeGen.EnumFlags (genEnum, genFlags)
@@ -227,10 +227,18 @@ genMethod cn Method {
                 else c'
 
       genCCallableWrapper mn sym c''
-      
-      gline $ "method " <> name mn <> " = " <> name cn <> "." <> name mn <> " obj"
-      
+
+      typeReps <- callableOCamlTypes c
+
+      case typeReps of
+        [] -> gline $ "method " <> name mn <> " = " <> name cn <> "." <> name mn <> " obj"
+        _  -> do
+          let typeReps' = tail typeReps
+              typesStr  = map typeShowPolyToAlpha typeReps'
+          gline $ "method " <> name mn <> " : " <> T.intercalate " -> " typesStr <> " = " <> name cn <> "." <> name mn <> " obj"
+
       -- export (NamedSubsection MethodSection $ lowerName mn) (lowerName mn')
+          
 
 -- Type casting with type checking
 -- TODO: Move stuff in here
