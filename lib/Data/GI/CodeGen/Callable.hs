@@ -111,7 +111,10 @@ foreignArgConverter i a = do
   return $ if mayBeNull a
     then optionVal i conv "NULL"
     else conv
-  where optionVal argNum justConv nothingVal = "Option_val(arg" <> T.pack (show argNum) <> ", " <> justConv <> ", " <> nothingVal <> ")"
+  where optionVal argNum justConv nothingVal =
+          let argNumStr = T.pack (show argNum) in
+          let args = T.intercalate ", " [argNumStr, justConv, nothingVal] in
+          "Option_val(arg" <> args <> ") Ignore" -- TODO: Check if this Ignore is working as intended
 
 genMlMacro :: Text -> Callable -> ExcCodeGen ()
 genMlMacro cSymbol callable = do

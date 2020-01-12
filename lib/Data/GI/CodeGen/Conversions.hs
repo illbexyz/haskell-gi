@@ -1250,7 +1250,12 @@ ocamlDataConv (TInterface n) = do
     APIEnum _enum   -> return $ T.toTitle (namespace n) <> "Enums.Conv." <> ocamlName
     APIFlags _f     -> notImplementedError "This ocamlDataConv (APIFlags) isn't implemented yet" -- Probably similar to Enum
     APIInterface _i -> notImplementedError "This ocamlDataConv (APIInterface) isn't implemented yet"
-    APIObject _o    -> return $ "(gobject : " <> namespace n <> "." <> ocamlName <> " obj data_conv)"
+    APIObject _o    -> do
+      currMod <- currentModule
+      let currModuleName = last $ T.splitOn "." currMod
+      return $ if name n == currModuleName
+        then "(gobject : t obj data_conv)"
+        else "(gobject : " <> name n <> ".t obj data_conv)"
     APIStruct _s    -> notImplementedError "This ocamlDataConv (APIStruct) isn't implemented yet"
     APIUnion _u     -> notImplementedError "This ocamlDataConv (APIUnion) isn't implemented yet"
 

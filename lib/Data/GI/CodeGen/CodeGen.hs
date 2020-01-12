@@ -28,7 +28,7 @@ import Data.GI.CodeGen.Haddock (deprecatedPragma, addSectionDocumentation,
                                 RelativeDocPosition(DocBeforeSymbol))
 import Data.GI.CodeGen.Inheritance (instanceTree)
 import Data.GI.CodeGen.Properties (genInterfaceProperties, genObjectProperties)
-import Data.GI.CodeGen.Signal (genSignal, genCallback)
+import Data.GI.CodeGen.Signal (genSignal, genGSignal, genCallback)
 import Data.GI.CodeGen.Struct (genStructOrUnionFields, extractCallbacksInStruct,
                   fixAPIStructs, ignoreStruct, genZeroStruct, genZeroUnion,
                   genWrappedPtr)
@@ -36,7 +36,6 @@ import Data.GI.CodeGen.SymbolNaming (upperName, classConstraint, noName,
                                      submoduleLocation, lowerName,
                                      camelCaseToSnakeCase, hyphensToUnderscores)
 import Data.GI.CodeGen.Type
-import Data.GI.CodeGen.Util (lcFirst)
 
 -- | Standard derived instances for newtypes wrapping @ManagedPtr@s.
 newtypeDeriving :: CodeGen ()
@@ -243,8 +242,9 @@ genMethod cn Method {
 -- Type casting with type checking
 -- TODO: Move stuff in here
 genGObjectCasts :: Name -> Text -> [Name] -> CodeGen ()
-genGObjectCasts (Name nspace n) _cn_ _parents =
-  cline $ "#define " <> nspace <> n <> "_val(" <> "val) check_cast(" <> T.toUpper (nspace <> "_" <> n) <> ", val)" 
+genGObjectCasts (Name nspace n) _cn_ _parents = do
+  let nnnn = T.toUpper (nspace <> "_" <> camelCaseToSnakeCase n)
+  cline $ "#define " <> nspace <> n <> "_val(" <> "val) check_cast(" <> nnnn <> ", val)" 
 
 
 isSetterOrGetter :: Object -> Method -> Bool
@@ -255,14 +255,44 @@ isSetterOrGetter o m =
   ("get" `T.isPrefixOf` mName || "set" `T.isPrefixOf` mName)
     && any (`T.isSuffixOf` mName) propNames 
 
+genSignalClass :: Name -> Object -> CodeGen ()
+genSignalClass n o = do
+  let objectName = name n
+      ocamlName = camelCaseToSnakeCase objectName
+
+  gline $ "class " <> ocamlName <> "_signals obj = object (self)"
+
+  parents <- instanceTree n
+  let parents' = filter (\p -> name p `notElem` ["Object", "Widget", "Container", "Bin"]) parents
+  case parents' of
+    [] -> gline "inherit GContainer.container_signals_impl obj"
+    _  -> do
+      let parent = head parents
+          ocamlParentName = camelCaseToSnakeCase $ name parent
+      gline $ "inherit G" <> name parent <> "." <> ocamlParentName <> "_signals obj"
+
+  forM_ (objSignals o) $ \s -> genGSignal s n
+  gline "end" 
+  gblank
+
 -- | Wrap a given Object. We enforce that every Object that we wrap is a
 -- GObject. This is the case for everything except the ParamSpec* set
 -- of objects, we deal with these separately.
 genObject :: Name -> Object -> CodeGen ()
 genObject n o = -- do
   -- if name n `notElem` ["Button", "ToggleButton", "RadioButton", "Toolbar", "ColorButton", "FontButton", "Range"] then
-  if name n `notElem` ["Button", "RadioButton"] then
+  if name n `notElem` ["Button", "CheckButton", "ToggleButton", "RadioButton"] then do
     commentLine "Ignored: I'm generating only button and range"
+    parents <- instanceTree n
+    let objectName = name n
+        ocamlName = camelCaseToSnakeCase objectName
+        parent = head parents
+
+    let parentType = case (name parent == "Object", namespace parent == "Gtk") of
+          (True, _) -> "`giu"
+          (_, True) -> "" <> name parent <> ".t"
+          _         -> "`" <> camelCaseToSnakeCase (name parent)
+    line $ "type t = [" <> parentType <> " | ` " <> ocamlName <> "]"
   else do
     let name' = upperName n
     let t = TInterface n
@@ -273,7 +303,6 @@ genObject n o = -- do
                   "\" does not descend from GObject, it will be ignored."
     else do
       -- writeHaddock DocBeforeSymbol ("Memory-managed wrapper type.")
-      -- newtypeDeriving
       -- exportDecl (name' <> "(..)")
 
       -- addSectionDocumentation ToplevelSection (objDocumentation o)
@@ -282,13 +311,17 @@ genObject n o = -- do
       parents <- instanceTree n
       genGObjectCasts n (objTypeInit o) (parents <> objInterfaces o)
 
-      -- noName name'
-
       let nspace = namespace n
-      let objectName = name n
+          objectName = name n
+          ocamlName = camelCaseToSnakeCase objectName
+          parent = head parents
+          ocamlParentName = camelCaseToSnakeCase $ name parent
+          namespacedParentName = case name parent of
+            "Bin" -> "GContainer.bin"
+            _     -> "G" <> name parent <> "." <> ocamlParentName <> "_skel"
 
       -- TODO: not sure
-      _parents <- reverse . filter (not . T.isPrefixOf "Object" . name) <$> instanceTree n
+      -- parentss <- reverse . filter (not . T.isPrefixOf "Object" . name) <$> instanceTree n
 
       gline "open GtkSignal"
       gline "open Gobject"
@@ -297,21 +330,29 @@ genObject n o = -- do
       gline $ "open " <> objectName
       gblank
 
-      gline $ "class virtual " <> camelCaseToSnakeCase (lcFirst objectName) <> " obj = object (self)"
-      -- TODO: Probably we must export somewhere the full type
-      --       (ex: [bin | `button]) and use this type
-      gindent $ do
-        gline $ "val obj : " <> "[>`" <> T.toLower (lcFirst objectName) <> "] obj = obj"
-        gline "method private virtual connect : 'b. ('a,'b) GtkSignal.t -> callback:'b -> GtkSignal.id"
+      genSignalClass n o
 
+      gline $ "class " <> ocamlName <> "_skel obj = object (self)"
+      -- gindent $ do
+        -- gline $ "val obj : " <> "[>`" <> T.toLower (lcFirst objectName) <> "] obj = obj"
+        -- gline "method private virtual connect : 'b. ('a,'b) GtkSignal.t -> callback:'b -> GtkSignal.id"
+      gline $ "inherit " <> namespacedParentName <> " obj"
       -- mapM_ (\p -> gline $ "inherit G" <> name p <> "." <> lcFirst (name p) <> " obj") parents
-      gblank
+      -- gblank
 
       line "open Gobject"
       line "open Data"
       line "module Object = GtkObject"
       blank
       line "open Gtk"
+      blank
+
+      let parentType = case (name parent == "Object", namespace parent == "Gtk") of
+            (True, _) -> "`giu"
+            (_, True) -> "" <> name parent <> ".t"
+            _         -> "`" <> camelCaseToSnakeCase (name parent)
+      line $ "type t = [" <> parentType <> " | ` " <> ocamlName <> "]"
+      blank
 
       unless (null $ objProperties o) $ group $ do
         line "let may_cons = Property.may_cons"
@@ -322,25 +363,22 @@ genObject n o = -- do
         gblank
 
       unless (null $ objSignals o) $ group $ do
-        gline "(* Signals *)"
         line "module S = struct"
         indent $ do
           line $ "open " <> nspace <> "Signal"
           forM_ (objSignals o) $ \s -> genSignal s n
+          
         line "end"
 
       group $
         line $ "let cast w : "
-          <> nspace <> "." <> camelCaseToSnakeCase objectName <> " obj = try_cast w "
-          <> "\"" <> nspace <> objectName <> "\""
+          <> "t obj = try_cast w \"" <> nspace <> objectName <> "\""
 
       group $
         line $ "let create pl : "
-          <> nspace <> "." <> camelCaseToSnakeCase objectName <> " obj = Object.make "
-          <> "\"" <> nspace <> objectName <> "\" pl"
+          <> "t obj = Object.make \"" <> nspace <> objectName <> "\" pl"
 
       -- Methods
-      gblank
       gline "(* Methods *)"
       let methods = objMethods o
       let methods' = filter (not . isSetterOrGetter o) methods
@@ -351,6 +389,12 @@ genObject n o = -- do
                                 <> name' <> "::" <> name mn <> " *)\n"
                                 <> "(* Error was : " <> describeCGError e <> " *)"))
                     (genMethod n f)
+      gline "end"
+      gblank
+      gline $ "class " <> ocamlName <> " obj = object (self)"
+      gline $ "inherit " <> ocamlName <> "_skel obj"
+      unless (null $ objSignals o) $ group $
+        gline $ "method connect = new " <> ocamlName <> "_signals obj"
       gline "end"
                     
 

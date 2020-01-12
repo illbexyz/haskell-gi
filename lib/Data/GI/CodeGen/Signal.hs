@@ -1,5 +1,6 @@
 module Data.GI.CodeGen.Signal
     ( genSignal
+    , genGSignal
     , genCallback
     , signalHaskellName
     ) where
@@ -68,8 +69,6 @@ genOCamlCallbackPrototype subsec cb _htype classe expose _doc = do
         <> "classe=`" <> T.toLower classe <> "; " -- TODO: use a typerep here
         <> "marshaller=" <> marshaller
         <> "}"
-    
-    gline $ "method connect_" <> subsec <> " = self#connect " <> ucFirst classe <> ".S." <> subsec
 
     -- line $ "type " <> name' <> " ="
     -- indent $ do
@@ -464,3 +463,9 @@ genSignal s@Signal { sigName = sn, sigCallable = cb } on =
   --   else do
   --     genClosure (lcFirst sn') cb cbType signalConnectorName True
   --     genCallbackWrapper (lcFirst sn') cb cbType True
+
+genGSignal :: Signal -> Name -> CodeGen ()
+genGSignal Signal { sigName = sn , sigCallable = _ } on = do
+  let sn' = signalOCamlName sn
+      on' = ucFirst $ lowerName on
+  gline $ "method " <> sn' <> " = self#connect " <> on' <> ".S." <> sn'
