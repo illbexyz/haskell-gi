@@ -1304,7 +1304,7 @@ ocamlValueToC (TInterface n) = do
     APICallback _c  -> notImplementedError "This ocamlValueToC (APICallback) isn't implemented yet"
     APIEnum _enum   -> notImplementedError "This ocamlValueToC (Enum) isn't implemented yet"
     APIFlags _f     -> notImplementedError "This ocamlValueToC (APIFlags) isn't implemented yet"
-    APIInterface _i -> notImplementedError "This ocamlValueToC (APIInterface) isn't implemented yet"
+    APIInterface _i -> return $ namespace n <> name n <> "_val"
     APIObject _o    -> return $ namespace n <> name n <> "_val"
     APIStruct _s    -> notImplementedError "This ocamlValueToC (APIStruct) isn't implemented yet"
     APIUnion _u     -> notImplementedError "This ocamlValueToC (APIUnion) isn't implemented yet"

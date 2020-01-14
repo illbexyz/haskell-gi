@@ -87,7 +87,7 @@ mkForeignImport mn cSymbol callable = do
         -- when (callableThrows callable) $
         --        line $ padTo 40 "Ptr (Ptr GError) -> " <> "-- error"
         line =<< (callableReturnShow callable)
-        line $ "= \"ml_" <> cSymbol <> "\""
+        line $ "= \"ml_gi_" <> cSymbol <> "\""
     return hSymbol
     where
     hSymbol = if T.any (== '_') cSymbol

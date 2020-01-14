@@ -79,55 +79,55 @@ CAMLexport value ml_lookup_flags_getter (const lookup_info table[], int data);
 /* Wrapper generators */
 
 #define Unsupported_22(cname) \
-CAMLprim value ml_##cname () \
+CAMLprim value ml_gi_##cname () \
 { failwith(#cname " unsupported in Gtk 2.x < 2.2"); }
 #define Unsupported Unsupported_22
 #define Unsupported_24(cname) \
-CAMLprim value ml_##cname () \
+CAMLprim value ml_gi_##cname () \
 { failwith(#cname " unsupported in Gtk 2.x < 2.4"); }
 #define Unsupported_26(cname) \
-CAMLprim value ml_##cname () \
+CAMLprim value ml_gi_##cname () \
 { failwith(#cname " unsupported in Gtk 2.x < 2.6"); }
 #define Unsupported_28(cname) \
-CAMLprim value ml_##cname () \
+CAMLprim value ml_gi_##cname () \
 { failwith(#cname " unsupported in Gtk 2.x < 2.8"); }
 
 #define Unsupported_210(cname) \
-CAMLprim value ml_##cname () \
+CAMLprim value ml_gi_##cname () \
 { failwith(#cname " unsupported in Gtk 2.x < 2.10"); }
 #define Unsupported_212(cname) \
-CAMLprim value ml_##cname () \
+CAMLprim value ml_gi_##cname () \
 { failwith(#cname " unsupported in Gtk 2.x < 2.12"); }
 
 #define ID(x) (x)
 
 #define ML_0(cname, conv) \
-CAMLprim value ml_##cname (value unit) { return conv (cname ()); }
+CAMLprim value ml_gi_##cname (value unit) { return conv (cname ()); }
 #define ML_1(cname, conv1, conv) \
-CAMLprim value ml_##cname (value arg1) { return conv (cname (conv1 (arg1))); }
+CAMLprim value ml_gi_##cname (value arg1) { return conv (cname (conv1 (arg1))); }
 #define ML_1_post(cname, conv1, conv, post) \
-CAMLprim value ml_##cname (value arg1) \
+CAMLprim value ml_gi_##cname (value arg1) \
 { value ret = conv (cname (conv1(arg1))); post; return ret; }
 #define ML_2(cname, conv1, conv2, conv) \
-CAMLprim value ml_##cname (value arg1, value arg2) \
+CAMLprim value ml_gi_##cname (value arg1, value arg2) \
 { return conv (cname (conv1(arg1), conv2(arg2))); }
 #define ML_2_name(mlname, cname, conv1, conv2, conv) \
 CAMLprim value mlname (value arg1, value arg2) \
 { return conv (cname (conv1(arg1), conv2(arg2))); }
 #define ML_3(cname, conv1, conv2, conv3, conv) \
-CAMLprim value ml_##cname (value arg1, value arg2, value arg3) \
+CAMLprim value ml_gi_##cname (value arg1, value arg2, value arg3) \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3))); }
 #define ML_3_name(mlname, cname, conv1, conv2, conv3, conv) \
 CAMLprim value mlname (value arg1, value arg2, value arg3) \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3))); }
 #define ML_4(cname, conv1, conv2, conv3, conv4, conv) \
-CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4) \
+CAMLprim value ml_gi_##cname (value arg1, value arg2, value arg3, value arg4) \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3), conv4(arg4))); }
 #define ML_4_name(mlname, cname, conv1, conv2, conv3, conv4, conv) \
 CAMLprim value mlname (value arg1, value arg2, value arg3, value arg4) \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3), conv4(arg4))); }
 #define ML_5(cname, conv1, conv2, conv3, conv4, conv5, conv) \
-CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
+CAMLprim value ml_gi_##cname (value arg1, value arg2, value arg3, value arg4, \
                            value arg5) \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3), conv4(arg4), \
 		      conv5(arg5))); }
@@ -137,24 +137,24 @@ CAMLprim value mlname (value arg1, value arg2, value arg3, value arg4, \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3), conv4(arg4), \
 		      conv5(arg5))); }
 #define ML_6(cname, conv1, conv2, conv3, conv4, conv5, conv6, conv) \
-CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
+CAMLprim value ml_gi_##cname (value arg1, value arg2, value arg3, value arg4, \
                            value arg5, value arg6) \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3), conv4(arg4), \
 		      conv5(arg5), conv6(arg6))); }
 #define ML_7(cname, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv) \
-CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
+CAMLprim value ml_gi_##cname (value arg1, value arg2, value arg3, value arg4, \
                            value arg5, value arg6, value arg7) \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3), conv4(arg4), \
 		      conv5(arg5), conv6(arg6), conv7(arg7))); }
 #define ML_8(cname, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, \
 	     conv) \
-CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
+CAMLprim value ml_gi_##cname (value arg1, value arg2, value arg3, value arg4, \
                            value arg5, value arg6, value arg7, value arg8) \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3), conv4(arg4), \
 		      conv5(arg5), conv6(arg6), conv7(arg7), conv8(arg8))); }
 #define ML_9(cname, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, \
 	      conv9, conv) \
-CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
+CAMLprim value ml_gi_##cname (value arg1, value arg2, value arg3, value arg4, \
                            value arg5, value arg6, value arg7, value arg8, \
                            value arg9) \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3), conv4(arg4), \
@@ -170,7 +170,7 @@ CAMLprim value mlname (value arg1, value arg2, value arg3, value arg4, \
 		      conv9(arg9))); }
 #define ML_10(cname, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, \
 	      conv9, conv10, conv) \
-CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
+CAMLprim value ml_gi_##cname (value arg1, value arg2, value arg3, value arg4, \
                            value arg5, value arg6, value arg7, value arg8, \
                            value arg9, value arg10)\
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3), conv4(arg4), \
@@ -178,7 +178,7 @@ CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
 		      conv9(arg9), conv10(arg10))); }
 #define ML_11(cname, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, \
 	      conv9, conv10, conv11, conv) \
-CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
+CAMLprim value ml_gi_##cname (value arg1, value arg2, value arg3, value arg4, \
                            value arg5, value arg6, value arg7, value arg8, \
                            value arg9, value arg10, value arg11) \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3), conv4(arg4), \
@@ -186,7 +186,7 @@ CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
 		      conv9(arg9), conv10(arg10), conv11(arg11))); }
 #define ML_12(cname, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, \
 	      conv9, conv10, conv11, conv12, conv) \
-CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
+CAMLprim value ml_gi_##cname (value arg1, value arg2, value arg3, value arg4, \
                            value arg5, value arg6, value arg7, value arg8, \
                            value arg9, value arg10, value arg11, value arg12) \
 { return conv (cname (conv1(arg1), conv2(arg2), conv3(arg3), conv4(arg4), \
@@ -195,7 +195,7 @@ CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
 		      conv12(arg12))); }
 #define ML_13(cname, conv1, conv2, conv3, conv4, conv5, conv6, conv7, conv8, \
 	      conv9, conv10, conv11, conv12, conv13, conv) \
-CAMLprim value ml_##cname (value arg1, value arg2, value arg3, value arg4, \
+CAMLprim value ml_gi_##cname (value arg1, value arg2, value arg3, value arg4, \
                            value arg5, value arg6, value arg7, value arg8, \
                            value arg9, value arg10, value arg11, value arg12, \
                            value arg13) \

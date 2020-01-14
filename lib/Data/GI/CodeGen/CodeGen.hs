@@ -292,7 +292,7 @@ genObject n o = -- do
           (True, _) -> "`giu"
           (_, True) -> "" <> name parent <> ".t"
           _         -> "`" <> camelCaseToSnakeCase (name parent)
-    line $ "type t = [" <> parentType <> " | ` " <> ocamlName <> "]"
+    line $ "type t = [" <> parentType <> " | `" <> ocamlName <> "]"
   else do
     let name' = upperName n
     let t = TInterface n
@@ -351,7 +351,7 @@ genObject n o = -- do
             (True, _) -> "`giu"
             (_, True) -> "" <> name parent <> ".t"
             _         -> "`" <> camelCaseToSnakeCase (name parent)
-      line $ "type t = [" <> parentType <> " | ` " <> ocamlName <> "]"
+      line $ "type t = [" <> parentType <> " | `" <> ocamlName <> "]"
       blank
 
       unless (null $ objProperties o) $ group $ do
