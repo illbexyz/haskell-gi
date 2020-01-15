@@ -62,11 +62,14 @@ genOCamlCallbackPrototype subsec cb _htype classe expose _doc = do
     -- writeDocumentation DocBeforeSymbol doc
 
     -- ret <- hOutType cb hOutArgs
+    let ocamlClassName = camelCaseToSnakeCase classe
+        classType      = typeShow $ poly $ con0 ocamlClassName
+
     marshaller <- ocamlMarshaller hInArgs subsec classe
 
     line $ "let " <> subsec <> " = {"
         <> "name=\"" <> subsec <> "\"; "
-        <> "classe=`" <> T.toLower classe <> "; " -- TODO: use a typerep here
+        <> "classe=" <> classType <> "; "
         <> "marshaller=" <> marshaller
         <> "}"
 

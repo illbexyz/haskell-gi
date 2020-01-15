@@ -19,9 +19,11 @@ import Data.GI.CodeGen.Code
 import Data.GI.CodeGen.GObject
 import Data.GI.CodeGen.Haddock (addSectionDocumentation)
                                 -- writeHaddock, RelativeDocPosition(DocBeforeSymbol))
-import Data.GI.CodeGen.Inheritance (fullObjectPropertyList, fullInterfacePropertyList)
+import Data.GI.CodeGen.Inheritance (fullObjectPropertyList, fullInterfacePropertyList,
+                                    instanceTree)
 import Data.GI.CodeGen.SymbolNaming (lowerName, upperName, hyphensToCamelCase,
-                                     qualifiedSymbol, hyphensToUnderscores)
+                                     qualifiedSymbol, hyphensToUnderscores,
+                                     camelCaseToSnakeCase)
 import Data.GI.CodeGen.Type
 import Data.GI.CodeGen.Util
 
@@ -35,9 +37,10 @@ genPropertyGetter getter classe _prop =
 
 genPropertyOCaml :: Name -> Property -> ExcCodeGen ()
 genPropertyOCaml classe prop = do
-  let pName = propName prop
-      uScoresName = hyphensToUnderscores pName
-      classType = typeShow $ polyMore $ con0 $ T.toLower $ lowerName classe
+  let pName          = propName prop
+      uScoresName    = hyphensToUnderscores pName
+      ocamlClassName = camelCaseToSnakeCase $ lowerName classe
+      classType      = typeShow $ polyMore $ con0 ocamlClassName
   -- TODO: uncomment next line
   -- writeHaddock DocBeforeSymbol (getterDoc n prop) 
   ocamlConverter <- ocamlDataConv $ propType prop
@@ -156,10 +159,10 @@ genOneProperty owner prop = do
   --                       then parenthesize sOutType
   --                       else sOutType
 
-genMakeParams :: [Property] -> CodeGen ()
-genMakeParams props = do
+genMakeParams :: Name -> [Property] -> CodeGen ()
+genMakeParams className props = do
   let constructors = filter isConstructor props
-  unless (null constructors) $ do
+  if not $ null constructors then do
     let constructorNames = map propName constructors
         underlinedConstrNames = map hyphensToUnderscores constructorNames
         optionalArgs = "?" <> T.intercalate " ?" underlinedConstrNames
@@ -176,12 +179,22 @@ genMakeParams props = do
           line $ mayCons cName <> " ("
         line $ mayCons lastConstr <> " pl" <> T.pack (replicate numConstructors ')') <> " in"
       line "cont pl"
+  else do
+    parents <- instanceTree className
+    unless (null parents) $ do
+      let parent = head parents
+      when (name parent /= "Bin") $
+        line $ "let make_params = " <> name parent <> ".make_params"
   where isConstructor prop =
             PropertyConstructOnly `elem` propFlags prop
             || PropertyConstruct `elem` propFlags prop
 
 genProperties :: Name -> [Property] -> [Text] -> CodeGen ()
 genProperties n ownedProps _allProps = do
+  line "let may_cons = Property.may_cons"
+  line "let may_cons_opt = Property.may_cons_opt"
+  blank
+  gline "(* Properties *)"
   line "module P = struct"
   indent $ do
     let name = upperName n
@@ -194,4 +207,4 @@ genProperties n ownedProps _allProps = do
                     (genOneProperty n prop)
 
   line "end"
-  genMakeParams ownedProps
+  genMakeParams n ownedProps

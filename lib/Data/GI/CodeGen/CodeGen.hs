@@ -316,6 +316,7 @@ genObject n o = -- do
           ocamlName = camelCaseToSnakeCase objectName
           parent = head parents
           ocamlParentName = camelCaseToSnakeCase $ name parent
+          isParentOverBin = name parent /= "Bin"
           namespacedParentName = case name parent of
             "Bin" -> "GContainer.bin"
             _     -> "G" <> name parent <> "." <> ocamlParentName <> "_skel"
@@ -330,6 +331,11 @@ genObject n o = -- do
       gline $ "open " <> objectName
       gblank
 
+      gline $ "class type " <> ocamlName <> "_o = object"
+      gline $ "  method as_" <> ocamlName <> " : t obj"
+      gline "end"
+      gblank
+
       genSignalClass n o
 
       gline $ "class " <> ocamlName <> "_skel obj = object (self)"
@@ -337,6 +343,7 @@ genObject n o = -- do
         -- gline $ "val obj : " <> "[>`" <> T.toLower (lcFirst objectName) <> "] obj = obj"
         -- gline "method private virtual connect : 'b. ('a,'b) GtkSignal.t -> callback:'b -> GtkSignal.id"
       gline $ "inherit " <> namespacedParentName <> " obj"
+      gline $ "method as_" <> ocamlName <> " = (obj :> t obj)"
       -- mapM_ (\p -> gline $ "inherit G" <> name p <> "." <> lcFirst (name p) <> " obj") parents
       -- gblank
 
@@ -354,11 +361,7 @@ genObject n o = -- do
       line $ "type t = [" <> parentType <> " | `" <> ocamlName <> "]"
       blank
 
-      unless (null $ objProperties o) $ group $ do
-        line "let may_cons = Property.may_cons"
-        line "let may_cons_opt = Property.may_cons_opt"
-        blank
-        gline "(* Properties *)"
+      group $ do
         genObjectProperties n o
         gblank
 
@@ -396,6 +399,15 @@ genObject n o = -- do
       unless (null $ objSignals o) $ group $
         gline $ "method connect = new " <> ocamlName <> "_signals obj"
       gline "end"
+
+      gline "let pack_return create p ?packing ?show () ="
+      gline "  GObj.pack_return (create p) ~packing ~show"
+
+      gline $ "let " <> ocamlName <> " = "
+      if isParentOverBin
+        then gline $ "  " <> name parent <> ".make_params [] ~cont:("
+        else gline $ "  " <> objectName <> ".make_params [] ~cont:("
+      gline $ "    " <> "pack_return (fun p -> new " <> ocamlName <>" (" <> objectName <> ".create p)))"
                     
 
 genInterface :: Name -> Interface -> CodeGen ()
@@ -476,27 +488,27 @@ symbolFromFunction sym = do
             sym1 == sym2 && movedTo == Nothing
         hasSymbol _ _ = False
 
-genAPI :: Name -> API -> CodeGen ()
-genAPI n (APIConst c) = genConstant n c
-genAPI n (APIFunction f) = genFunction n f
-genAPI n (APIEnum e) = genEnum n e
-genAPI n (APIFlags f) = genFlags n f
-genAPI n (APICallback c) = genCallback n c
-genAPI n (APIStruct s) = genStruct n s
-genAPI n (APIUnion u) = genUnion n u
-genAPI n (APIObject o) = genObject n o
-genAPI n (APIInterface i) = genInterface n i
-
 -- genAPI :: Name -> API -> CodeGen ()
--- genAPI _n (APIConst _c) = return ()
--- genAPI _n (APIFunction _f) = return ()
+-- genAPI n (APIConst c) = genConstant n c
+-- genAPI n (APIFunction f) = genFunction n f
 -- genAPI n (APIEnum e) = genEnum n e
--- genAPI _n (APIFlags _f) = return ()
--- genAPI _n (APICallback _c) = return ()
+-- genAPI n (APIFlags f) = genFlags n f
+-- genAPI n (APICallback c) = genCallback n c
 -- genAPI n (APIStruct s) = genStruct n s
--- genAPI _n (APIUnion _u) = return ()
+-- genAPI n (APIUnion u) = genUnion n u
 -- genAPI n (APIObject o) = genObject n o
--- genAPI _n (APIInterface _i) = return ()
+-- genAPI n (APIInterface i) = genInterface n i
+
+genAPI :: Name -> API -> CodeGen ()
+genAPI _n (APIConst _c) = return ()
+genAPI _n (APIFunction _f) = return ()
+genAPI n (APIEnum e) = genEnum n e
+genAPI _n (APIFlags _f) = return ()
+genAPI _n (APICallback _c) = return ()
+genAPI _n (APIStruct _s) = return ()
+genAPI _n (APIUnion _u) = return ()
+genAPI n (APIObject o) = genObject n o
+genAPI _n (APIInterface _i) = return ()
 
 -- | Generate the code for a given API in the corresponding module.
 genAPIModule :: Name -> API -> CodeGen ()
