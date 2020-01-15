@@ -93,7 +93,7 @@ import qualified Data.Text.Lazy.Builder as B
 import qualified Data.Text.Lazy as LT
 
 import System.Directory (createDirectoryIfMissing)
-import System.FilePath (joinPath, takeDirectory)
+import System.FilePath (joinPath, takeDirectory, takeBaseName)
 
 import Data.GI.CodeGen.API (API, Name(..))
 import Data.GI.CodeGen.Config (Config(..))
@@ -968,10 +968,17 @@ cOCamlModuleImports = T.unlines [
 dotWithPrefix :: ModulePath -> Text
 dotWithPrefix mp = dotModulePath ("GI" <> mp)
 
+type CFiles = [FilePath]
+
+type WithCFiles = StateT CFiles IO
+
+addCFile :: FilePath -> WithCFiles ()
+addCFile file = modify (file:)
+
 -- | Write to disk the code for a module, under the given base
 -- directory. Does not write submodules recursively, for that use
 -- `writeModuleTree`.
-writeModuleInfo :: Bool -> Maybe FilePath -> ModuleInfo -> IO ()
+writeModuleInfo :: Bool -> Maybe FilePath -> ModuleInfo -> WithCFiles ()
 writeModuleInfo verbose dirPrefix minfo = do
   let _submodulePaths = map (modulePath) (M.elems (submodules minfo))
       -- We reexport any submodules.
@@ -992,21 +999,22 @@ writeModuleInfo verbose dirPrefix minfo = do
       _deps = importDeps _pkgRoot (Set.toList $ qualifiedImports minfo)
       haddock = moduleHaddock (M.lookup ToplevelSection (sectionDocs minfo))
 
-  when verbose $ putStrLn ((T.unpack . dotWithPrefix . modulePath) minfo
-                           ++ " -> " ++ fname)
-  createDirectoryIfMissing True dirname
+  when verbose $ liftIO $ putStrLn ((T.unpack . dotWithPrefix . modulePath) minfo
+                          ++ " -> " ++ fname)
+  liftIO $ createDirectoryIfMissing True dirname
   -- utf8WriteFile fname (T.unlines [pragmas, optionsGHC, haddock, cppMacros,
   --                                prelude, imports, deps, code])
-  utf8WriteFile fname (T.unlines [haddock, code])
+  liftIO $ utf8WriteFile fname (T.unlines [haddock, code])
 
   unless (isCodeEmpty $ cCode minfo) $ do
     let cStubsFile = modulePathToFilePath dirPrefix (modulePath minfo) ".c"
-    utf8WriteFile cStubsFile (T.unlines [cOCamlModuleImports, genCStubs minfo])
+    addCFile cStubsFile
+    liftIO $ utf8WriteFile cStubsFile (T.unlines [cOCamlModuleImports, genCStubs minfo])
 
   unless (isCodeEmpty $ gCode minfo) $ do
     let gFileModulePath = addNamePrefix "g" (modulePath minfo)
     let gModuleFile = modulePathToFilePath dirPrefix gFileModulePath ".ml"
-    utf8WriteFile gModuleFile (T.unlines [genGModule minfo])
+    liftIO $ utf8WriteFile gModuleFile (T.unlines [genGModule minfo])
 
 -- | Generate the .hs-boot file for the given module.
 genCStubs :: ModuleInfo -> Text
@@ -1016,6 +1024,31 @@ genCStubs minfo = codeToText (cCode minfo)
 genGModule :: ModuleInfo -> Text
 genGModule minfo = codeToText (gCode minfo)
 
+genDuneFile :: FilePath -> [Text] -> IO ()
+genDuneFile outputDir cFiles = do
+  print (outputDir, cFiles)
+  let duneFilepath = joinPath [ outputDir , "dune" ]
+  let commonPart = [ "(library"
+                   , " (name " <> T.toLower (T.pack (takeBaseName outputDir)) <> ")"
+                   , " (libraries lablgtk3)" ]
+  utf8WriteFile duneFilepath $
+    case cFiles of
+      []     -> T.unlines $ commonPart ++ [")"]
+      cFiles -> T.unlines $
+                  [ "(rule"
+                  , " (targets"
+                  , "  cflag-gtk+-3.0.sexp" 
+                  , "  clink-gtk+-3.0.sexp)"
+                  , " (action (run dune_config -pkg gtk+-3.0 -version 3.18)))" ]
+                  ++ commonPart ++
+                  [ " (flags :standard -w -6-7-9-10-27-32-33-34-35-36-50-52 -no-strict-sequence)"
+                  , " (c_library_flags (:include clink-gtk+-3.0.sexp))"
+                  , " (foreign_stubs"
+                  , "  (language c)"
+                  , "  (names " <> T.intercalate " " cFiles <> ")"
+                  , "  (flags (:include cflag-gtk+-3.0.sexp) (:include cflag-extraflags.sexp) -Wno-deprecated-declarations)))" ]
+
+
 -- | Construct the filename corresponding to the given module.
 modulePathToFilePath :: Maybe FilePath -> ModulePath -> FilePath -> FilePath
 modulePathToFilePath dirPrefix (ModulePath mp) ext =
@@ -1023,12 +1056,28 @@ modulePathToFilePath dirPrefix (ModulePath mp) ext =
 
 -- | Write down the code for a module and its submodules to disk under
 -- the given base directory. It returns the list of written modules.
+writeModuleTree' :: Bool -> Maybe FilePath -> ModuleInfo -> WithCFiles [Text]
+writeModuleTree' verbose dirPrefix minfo = do
+  submodulePaths <- concat <$> forM (M.elems (submodules minfo))
+                                    (writeModuleTree' verbose dirPrefix)
+  writeModuleInfo verbose dirPrefix minfo
+  return (dotWithPrefix (modulePath minfo) : submodulePaths)
+
 writeModuleTree :: Bool -> Maybe FilePath -> ModuleInfo -> IO [Text]
 writeModuleTree verbose dirPrefix minfo = do
-  submodulePaths <- concat <$> forM (M.elems (submodules minfo))
-                                    (writeModuleTree verbose dirPrefix)
-  writeModuleInfo verbose dirPrefix minfo
-  return $ (dotWithPrefix (modulePath minfo) : submodulePaths)
+  (modules, cFiles) <- runStateT (writeModuleTree' verbose dirPrefix minfo) []
+  let modules'     = filter (\m -> length (T.splitOn "." m) > 3) modules -- Es: GI.Gtk.Enums h
+      modulePaths  = Set.fromList $ map (takeDirectory . T.unpack . T.replace "." "/") modules'
+      dirFileTuple = map (\cFile -> (takeDirectory cFile, T.pack $ takeBaseName cFile)) cFiles
+      cFilesMap    = foldl (\map (key, file) -> M.insertWith (++) key [file] map)
+                        M.empty dirFileTuple
+
+  forM_ modulePaths (\path -> do
+    createDirectoryIfMissing True path
+    let cFilenames = fromMaybe [] (M.lookup path cFilesMap)
+    genDuneFile path cFilenames)
+
+  return modules
 
 -- | Return the list of modules `writeModuleTree` would write, without
 -- actually writing anything to disk.

@@ -104,7 +104,6 @@ genConfigModule outputDir _modName _maybeGiven = do
   let baseDir = joinPath [ fromMaybe "" outputDir , "GI" ]
       dunePrj = joinPath [ baseDir , "dune-project" ]
       dune    = joinPath [ baseDir, "dune" ]
-      objDune = joinPath [ baseDir , "Gtk" , "Objects" , "dune"]
       dirname = takeDirectory baseDir
 
   createDirectoryIfMissing True dirname
@@ -116,20 +115,6 @@ genConfigModule outputDir _modName _maybeGiven = do
                                  , "  (binaries"
                                  , "   ./tools/dune_config.exe)))" ]
 
-  utf8WriteFile objDune $ T.unlines [ "(rule"
-                                    , " (targets"
-                                    , "  cflag-gtk+-3.0.sexp" 
-                                    , "  clink-gtk+-3.0.sexp)"
-                                    , " (action (run dune_config -pkg gtk+-3.0 -version 3.18)))"
-                                    , "(library"
-                                    , " (name objects)"
-                                    , " (libraries lablgtk3)"
-                                    , " (flags :standard -w -6-7-9-10-27-32-33-34-35-36-50-52 -no-strict-sequence)"
-                                    , " (c_library_flags (:include clink-gtk+-3.0.sexp))"
-                                    , " (foreign_stubs"
-                                    , "  (language c)"
-                                    , "  (names Button)"
-                                    , "  (flags (:include cflag-gtk+-3.0.sexp) (:include cflag-extraflags.sexp) -Wno-deprecated-declarations)))" ]
   -- where quoteOverrides :: Maybe TaggedOverride -> [Text]
   --       quoteOverrides Nothing = []
   --       quoteOverrides (Just (TaggedOverride _ ovText)) =
